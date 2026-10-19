@@ -5,6 +5,9 @@ to GAVEL. Built from the solution walkthrough (draft v0.3) and the Evidence Coll
 (rules R1–R11). Infrastructure lives in
 [nkgpamukuntla/evidence-collector](https://github.com/nkgpamukuntla/evidence-collector) (`infra/`).
 
+**What is deployed today:** [DEPLOYMENT.md](https://github.com/nkgpamukuntla/evidence-collector/blob/portal/docs/DEPLOYMENT.md)
+(portal: https://d2589qqp8c0e2b.cloudfront.net).
+
 ## Stack (open source)
 
 | Layer | Choice |
