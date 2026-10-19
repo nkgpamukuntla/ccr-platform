@@ -70,6 +70,7 @@ export default function Offices() {
               <td>{r.live_at ? <span className="pill pass">Live</span> : `${r.completed_steps.length} of 6 steps`}</td>
               <td className="row">
                 <Link to={`/offices/${r.id}/onboarding/${nextStep(r)}`}>{r.live_at ? "Review" : "Continue"}</Link>
+                <Link to={`/offices/${r.id}/posture`}>Posture</Link>
                 <Link to={`/offices/${r.id}/audit`}>Audit</Link>
               </td>
             </tr>

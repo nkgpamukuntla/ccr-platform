@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app import audit, prerequisites, vault
 from app.access import can_read, can_write
 from app.auth import CurrentUser
+from app.config import get_settings
 from app.db import tx
 from app.profiles import EnvironmentAnswers, PathItem, ProfileResult, classify
 from app.routers.offices import complete_step
@@ -127,7 +128,13 @@ def connections(office_id: UUID, user: CurrentUser) -> list[dict[str, Any]]:
 
 @router.post("/consents/{source}", status_code=status.HTTP_201_CREATED)
 def grant_consent(office_id: UUID, source: str, body: ConsentIn, user: CurrentUser) -> dict[str, str]:
-    """Records the office's consent. Phase 2 replaces this with the Microsoft admin-consent redirect."""
+    """Records the office's consent for sources without an online consent flow.
+
+    Microsoft 365 uses the admin-consent redirect (routers/microsoft.py) once the app is configured."""
+    if source == "microsoft365" and get_settings().ms_client_id:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Microsoft 365 consent is granted by the tenant's administrator through Microsoft"
+        )
     with tx() as conn:
         can_write(conn, user, office_id)
         conn.execute(

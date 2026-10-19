@@ -6,6 +6,7 @@ import Wizard from "./pages/Wizard";
 import Aoc from "./pages/Aoc";
 import Audit from "./pages/Audit";
 import Planned from "./pages/Planned";
+import Posture, { PosturePicker } from "./pages/Posture";
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
@@ -54,7 +55,8 @@ export default function App() {
             <Route path="/offices/:officeId/onboarding/:step" element={<Wizard />} />
             <Route path="/offices/:officeId/audit" element={<Audit />} />
             <Route path="/aoc" element={<Aoc />} />
-            <Route path="/posture" element={<Planned area="Posture" phase="2" what="The eight controls, each with its evidence label and date. Missing evidence reads Not observed, never met." />} />
+            <Route path="/posture" element={<PosturePicker />} />
+            <Route path="/offices/:officeId/posture" element={<Posture />} />
             <Route path="/findings" element={<Planned area="Findings" phase="5" what="Each gap becomes a finding with a recommendation and an owner." />} />
             <Route path="/remediation" element={<Planned area="Remediation" phase="5" what="Work moves across the board and closes only on fresh evidence." />} />
             <Route path="/evidence" element={<Planned area="Evidence pack" phase="5" what="The same evidence rendered for the insurer or the AOC; the county remains the submitter." />} />

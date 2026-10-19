@@ -36,6 +36,17 @@ class Settings(BaseSettings):
 
     static_dir: str = "static"
 
+    # Microsoft source (Phase 2). None of these is a secret: the private key never leaves KMS (R3).
+    ms_client_id: str = ""  # the multi-tenant app registration's Application (client) ID
+    ms_cert_thumbprint_sha1: str = ""  # x5t of the uploaded certificate (base64url)
+    ms_cert_thumbprint_sha256: str = ""  # x5t#S256
+    ec_signing_key_id: str = ""  # KMS RSA-2048 signing key ARN
+    ec_fingerprint_key_id: str = ""  # KMS HMAC key ARN
+    ec_raw_bucket: str = ""
+    ec_raw_keys: dict[str, str] = {}  # collector tenant id (office id) -> raw key ARN, JSON in env
+    ec_heartbeat_namespace: str = "EvidenceCollector"
+    ec_heartbeat_metric: str = "CollectionHeartbeat"
+
     @model_validator(mode="after")
     def _no_dev_auth_outside_local(self) -> "Settings":
         if self.auth_mode == "dev" and self.environment != "local":

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useMe } from "../App";
 import { api, Answers, Check, Connection, Office, post, Prerequisite, ProfileResult, put, Site } from "../api";
 
 const STEPS = ["Organisation", "Environment", "Prerequisites", "Connect", "Import / Collect", "Validate"];
@@ -222,6 +223,8 @@ function Prerequisites({ officeId, next }: { officeId: string; next: () => void 
 
 // ---------- 4 Connect ----------
 function Connect({ officeId, next }: { officeId: string; next: () => void }) {
+  const me = useMe();
+  const [params] = useSearchParams();
   const [rows, setRows] = useState<Connection[] | null>(null);
   const [tenant, setTenant] = useState("");
   const [keys, setKeys] = useState<Record<string, string>>({});
@@ -264,7 +267,13 @@ function Connect({ officeId, next }: { officeId: string; next: () => void }) {
               <p className="muted">Read-only application permissions. Not requested: mail, files, Teams messages, any write permission.</p>
               <ul>{r.scopes.map((s) => <li key={s}><code>{s}</code></li>)}</ul>
               {r.consent_status === "granted" ? (
-                <p>Consent recorded {r.granted_at && new Date(r.granted_at).toLocaleString()} {r.tenant_ref && `for ${r.tenant_ref}`}. <button className="secondary" onClick={() => revoke(r.source)}>Revoke</button></p>
+                <p>Consent granted {r.granted_at && new Date(r.granted_at).toLocaleString()} {r.tenant_ref && `by tenant ${r.tenant_ref}`}. <button className="secondary" onClick={() => revoke(r.source)}>Revoke record</button></p>
+              ) : me.microsoft_configured ? (
+                <>
+                  {params.get("consent") === "refused" && <div className="error">Consent was not granted. A Global Administrator of the county's tenant must approve it.</div>}
+                  <p>A Global Administrator of the county's tenant signs in at Microsoft and approves read-only access once. It can be revoked in the county's own tenant at any time.</p>
+                  <a href={`/api/offices/${officeId}/consents/microsoft365/start`}><button type="button">Sign in and grant consent</button></a>
+                </>
               ) : (
                 <>
                   <label>Tenant ID or primary domain</label>

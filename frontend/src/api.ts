@@ -32,7 +32,7 @@ export const put = <T,>(path: string, body: unknown) => api<T>(path, { method: "
 export const post = <T,>(path: string, body: unknown = {}) => api<T>(path, { method: "POST", body: JSON.stringify(body) });
 
 // ---------- types ----------
-export type Me = { email: string; groups: string[]; is_admin: boolean; is_aoc: boolean; environment: string };
+export type Me = { email: string; groups: string[]; is_admin: boolean; is_aoc: boolean; environment: string; microsoft_configured: boolean };
 export type Site = { id: string; code: string; name: string; address: string | null; county: string; courts: string[] };
 export type OfficeRow = {
   id: string;
@@ -64,3 +64,14 @@ export type Connection = {
   scopes: string[];
 };
 export type Check = { check: string; result: "pass" | "warn" | "fail"; action: string };
+export type ControlRow = { control: number; name: string; state: "met" | "gap" | "weak" | "not_observed" | "pending"; method: string; detail: Record<string, unknown>; as_of: string };
+export type Posture = {
+  run: { id: string; started_at: string; finished_at: string; ms_tenant_id: string; summary: Record<string, number> } | null;
+  last_attempt: { started_at: string; status: string; error: string | null } | null;
+  controls: ControlRow[];
+  facts: {
+    licences: { sku: string; enabled: number; consumed: number }[];
+    devices: { total: number; managed: number; compliant: number } | null;
+    reads: Record<string, number>;
+  } | null;
+};

@@ -16,7 +16,7 @@ from psycopg import sql
 from app.config import get_settings
 from app.db import conninfo
 
-RUNTIME_ROLES = ("ec_portal",)
+RUNTIME_ROLES = ("ec_portal", "ec_worker", "ec_evaluator")
 
 
 def migrate(directory: Path) -> list[str]:

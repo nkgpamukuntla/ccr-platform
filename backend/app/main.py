@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app import auth, db
 from app.auth import CurrentUser
 from app.config import get_settings
-from app.routers import aoc, offices, onboarding
+from app.routers import aoc, microsoft, offices, onboarding
 
 
 @asynccontextmanager
@@ -29,6 +29,7 @@ app.include_router(auth.router)
 app.include_router(offices.router)
 app.include_router(onboarding.router)
 app.include_router(onboarding.preview_router)
+app.include_router(microsoft.router)
 app.include_router(aoc.router)
 
 
@@ -55,6 +56,7 @@ def me(user: CurrentUser) -> dict[str, object]:
         "is_admin": user.is_admin,
         "is_aoc": user.is_aoc,
         "environment": get_settings().environment,
+        "microsoft_configured": bool(get_settings().ms_client_id),
     }
 
 

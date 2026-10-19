@@ -41,7 +41,9 @@ def client() -> Iterator[Any]:
         get_settings.cache_clear()
         from app.migrate import migrate
 
-        assert migrate(Path(__file__).parent.parent / "migrations") == ["0001_foundation.sql", "0002_seed_sites.sql"]
+        assert migrate(Path(__file__).parent.parent / "migrations") == sorted(
+            p.name for p in (Path(__file__).parent.parent / "migrations").glob("*.sql")
+        )
         assert migrate(Path(__file__).parent.parent / "migrations") == []  # idempotent
     with mock.patch.dict(os.environ, {**env, "PGUSER": "ec_portal"}):
         get_settings.cache_clear()
@@ -177,3 +179,77 @@ def test_dev_auth_refused_outside_local() -> None:
 
     with pytest.raises(ValidationError):
         Settings(auth_mode="dev", environment="dev")
+
+
+def _as_role(role: str) -> None:
+    """Reopen the pool as another runtime role, so its grants are what the code runs under."""
+    from app import db
+    from app.config import get_settings
+
+    db.close_pool()
+    os.environ["PGUSER"] = role
+    get_settings.cache_clear()
+    db.open_pool()
+
+
+def test_collection_to_posture_end_to_end(client: Any) -> None:
+    """Worker (ec_worker) seals a bundle, evaluator (ec_evaluator) scores it, portal (ec_portal) shows it."""
+    from tests.test_microsoft import bundle as make_bundle
+    from tests.test_microsoft import policy
+
+    r = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "Lab County A office", "office_type": "County IT", "county": "Lab A"}
+    )
+    oid = r.json()["id"]
+    tenant = "0f0e0d0c-0b0a-0908-0706-050403020100"
+    assert client.post(f"/api/offices/{oid}/consents/microsoft365", headers=ADMIN, json={"tenant_ref": tenant}).status_code == 201
+
+    regs = [{"userPrincipalName": "admin@lab", "isAdmin": True, "isMfaRegistered": True, "methodsRegistered": ["mobilePhone"]}]
+    reads = make_bundle(ca=[policy("Require MFA", state="enabledForReportingButNotEnforced")], regs=regs)["reads"]
+    stored: dict[str, bytes] = {}
+
+    class FakeS3:
+        def put_object(self, **kw: Any) -> dict[str, str]:
+            assert kw["SSEKMSKeyId"] == "arn:aws:kms:us-east-1:1:key/lab-a" and kw["Key"].startswith(f"{oid}/")
+            stored[kw["Key"]] = kw["Body"]
+            return {"VersionId": "v1"}
+
+        def get_object(self, **kw: Any) -> dict[str, Any]:
+            import io
+
+            return {"Body": io.BytesIO(stored[kw["Key"]])}
+
+    from app import worker
+    from app.config import get_settings
+
+    try:
+        _as_role("ec_worker")
+        s = get_settings().model_copy(
+            update={"ms_client_id": "app", "ec_raw_bucket": "raw", "ec_raw_keys": {oid: "arn:aws:kms:us-east-1:1:key/lab-a"}}
+        )
+        offices = {str(o["office_id"]): o["tenant_ref"] for o in worker.consented_offices()}
+        assert offices[oid] == tenant
+        with (
+            mock.patch("app.worker.get_token", return_value="token"),
+            mock.patch(
+                "app.worker.graph.fetch",
+                side_effect=lambda _h, _t, rd: next(x for x in reads if x["name"] == rd.name) | {"name": rd.name}
+                if any(x["name"] == rd.name for x in reads)
+                else {"name": rd.name, "status": 404, "pages": []},
+            ),
+            mock.patch("app.worker.boto3.client", return_value=FakeS3()),
+        ):
+            assert worker.collect_one(s, mock.Mock(), mock.Mock(), oid, tenant, "fp") == "collected"
+
+        _as_role("ec_evaluator")
+        from app.evaluator import evaluate_pending
+
+        assert evaluate_pending(FakeS3(), "raw") == {"evaluated": 1, "failed": 0}
+    finally:
+        _as_role("ec_portal")
+
+    p = client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()
+    by = {c["control"]: c for c in p["controls"]}
+    assert by[1]["state"] == "weak" and by[3]["state"] == "weak" and by[5]["state"] == "not_observed"
+    assert p["facts"]["licences"][0]["sku"] == "SPE_E5"
+    assert p["run"]["ms_tenant_id"] == tenant
