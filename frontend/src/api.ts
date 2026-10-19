@@ -12,7 +12,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...init,
   });
   if (res.status === 401) {
-    window.location.href = "/auth/login";
+    window.location.href = "/auth/login?next=" + encodeURIComponent(window.location.pathname + window.location.search);
     throw new ApiError(401, "sign in required");
   }
   if (!res.ok) {

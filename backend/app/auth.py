@@ -99,6 +99,13 @@ def require_aoc(user: CurrentUser) -> User:
 
 
 # ---------- browser flow ----------
+def safe_next(target: str | None) -> str:
+    """Only same-site paths: never an absolute URL or a scheme-relative //host (open redirect)."""
+    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return "/"
+
+
 def _pkce() -> tuple[str, str]:
     verifier = secrets.token_urlsafe(64)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
@@ -106,9 +113,9 @@ def _pkce() -> tuple[str, str]:
 
 
 @router.get("/login")
-def login(s: Annotated[Settings, Depends(get_settings)]) -> RedirectResponse:
+def login(s: Annotated[Settings, Depends(get_settings)], next: str | None = None) -> RedirectResponse:  # noqa: A002
     if s.auth_mode == "dev":
-        return RedirectResponse("/")
+        return RedirectResponse(safe_next(next))
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(24)
     query = urlencode(
@@ -125,7 +132,7 @@ def login(s: Annotated[Settings, Depends(get_settings)]) -> RedirectResponse:
     resp = RedirectResponse(f"{s.cognito_domain}/oauth2/authorize?{query}")
     resp.set_cookie(
         FLOW_COOKIE,
-        f"{state}.{verifier}",
+        f"{state}.{verifier}.{base64.urlsafe_b64encode(safe_next(next).encode()).decode()}",
         max_age=600,
         httponly=True,
         secure=s.secure_cookies,
@@ -138,7 +145,8 @@ def login(s: Annotated[Settings, Depends(get_settings)]) -> RedirectResponse:
 @router.get("/callback")
 def callback(request: Request, code: str, state: str, s: Annotated[Settings, Depends(get_settings)]) -> RedirectResponse:
     flow = request.cookies.get(FLOW_COOKIE, "")
-    expected_state, _, verifier = flow.partition(".")
+    expected_state, _, rest = flow.partition(".")
+    verifier, _, next_b64 = rest.partition(".")
     if not verifier or not secrets.compare_digest(expected_state, state):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "sign-in state mismatch; start again")
     r = httpx.post(
@@ -156,7 +164,11 @@ def callback(request: Request, code: str, state: str, s: Annotated[Settings, Dep
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "sign-in failed")
     id_token = r.json()["id_token"]
     claims = verify_id_token(id_token, s)
-    resp = RedirectResponse("/")
+    try:
+        target = safe_next(base64.urlsafe_b64decode(next_b64.encode()).decode())
+    except ValueError:
+        target = "/"
+    resp = RedirectResponse(target)
     resp.set_cookie(
         SESSION_COOKIE,
         id_token,

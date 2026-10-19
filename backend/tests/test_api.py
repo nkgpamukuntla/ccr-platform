@@ -253,3 +253,28 @@ def test_collection_to_posture_end_to_end(client: Any) -> None:
     assert by[1]["state"] == "weak" and by[3]["state"] == "weak" and by[5]["state"] == "not_observed"
     assert p["facts"]["licences"][0]["sku"] == "SPE_E5"
     assert p["run"]["ms_tenant_id"] == tenant
+
+
+def test_page_navigation_without_session_goes_to_sign_in_and_back() -> None:
+    from fastapi.testclient import TestClient
+
+    from app.auth import safe_next
+    from app.config import get_settings
+    from app.main import app
+
+    with mock.patch.dict(os.environ, {"AUTH_MODE": "cognito", "ENVIRONMENT": "dev", "STATIC_DIR": "none"}):
+        get_settings.cache_clear()
+        try:
+            c = TestClient(app)  # no lifespan: no database needed for a 401
+            page = c.get("/api/offices/x/consents/microsoft365/start", headers={"accept": "text/html"}, follow_redirects=False)
+            assert page.status_code == 307
+            assert page.headers["location"] == "/auth/login?next=%2Fapi%2Foffices%2Fx%2Fconsents%2Fmicrosoft365%2Fstart"
+            api = c.get("/api/me", headers={"accept": "application/json"})
+            assert api.status_code == 401
+        finally:
+            get_settings.cache_clear()
+    assert (
+        safe_next("//evil.example") == "/"
+        and safe_next("https://evil.example") == "/"
+        and safe_next("/offices/1") == "/offices/1"
+    )

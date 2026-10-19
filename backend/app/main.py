@@ -6,13 +6,16 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import auth, db
-from app.auth import CurrentUser
+from app.auth import CurrentUser, safe_next
 from app.config import get_settings
 from app.routers import aoc, microsoft, offices, onboarding
 
@@ -41,6 +44,15 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
     if request.url.path.startswith("/api/"):
         response.headers.setdefault("Cache-Control", "no-store")
     return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_errors(request: Request, exc: StarletteHTTPException) -> Response:
+    """A page navigation without a valid session goes to sign-in and comes back; API calls get JSON."""
+    if exc.status_code == 401 and "text/html" in request.headers.get("accept", ""):
+        target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+        return RedirectResponse("/auth/login?" + urlencode({"next": safe_next(target)}))
+    return await http_exception_handler(request, exc)
 
 
 @app.get("/healthz", include_in_schema=False)
