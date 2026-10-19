@@ -163,12 +163,11 @@ def test_only_admins_create_offices(client: Any) -> None:
 def test_audit_log_is_append_only(client: Any) -> None:
     import psycopg
 
-    from app.db import conninfo
     from app.config import get_settings
+    from app.db import conninfo
 
-    with psycopg.connect(**conninfo(get_settings())) as conn:  # as ec_portal
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
-            conn.execute("DELETE FROM audit_log")
+    with psycopg.connect(**conninfo(get_settings())) as conn, pytest.raises(psycopg.errors.InsufficientPrivilege):  # as ec_portal
+        conn.execute("DELETE FROM audit_log")
 
 
 def test_dev_auth_refused_outside_local() -> None:
