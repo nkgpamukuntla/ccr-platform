@@ -236,7 +236,12 @@ function Connect({ officeId, next }: { officeId: string; next: () => void }) {
     load();
   }, [officeId]);
 
-  const connectRows = rows?.filter((r) => r.mode === "connect") ?? [];
+  // Intune and Defender are read through the Microsoft 365 consent: no key of their own.
+  const COVERED = ["intune", "defender"];
+  const order = (src: string) => (src === "microsoft365" ? 0 : COVERED.includes(src) ? 1 : 2);
+  const connectRows = (rows?.filter((r) => r.mode === "connect") ?? []).sort((a, b) => order(a.source) - order(b.source));
+  const msGranted = rows?.some((r) => r.source === "microsoft365" && r.consent_status === "granted") ?? false;
+  const isConnected = (r: Connection) => r.consent_status === "granted" || r.has_credential || (COVERED.includes(r.source) && msGranted);
   const consent = (source: string) => run(() => post(`/api/offices/${officeId}/consents/${source}`, { tenant_ref: tenant || null })).then(load);
   const revoke = (source: string) => run(() => post(`/api/offices/${officeId}/consents/${source}/revoke`)).then(load);
   const storeKey = async (source: string) => {
@@ -260,7 +265,7 @@ function Connect({ officeId, next }: { officeId: string; next: () => void }) {
         <div key={r.source} className="card">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <strong>{r.source}</strong>
-            {r.consent_status === "granted" || r.has_credential ? <span className="pill pass">Connected</span> : <span className="pill warn">Not connected</span>}
+            {isConnected(r) ? <span className="pill pass">Connected</span> : <span className="pill warn">Not connected</span>}
           </div>
           {r.source === "microsoft365" ? (
             <>
@@ -283,9 +288,11 @@ function Connect({ officeId, next }: { officeId: string; next: () => void }) {
                 </>
               )}
             </>
+          ) : COVERED.includes(r.source) ? (
+            <p className="muted">Read through the Microsoft 365 consent above. No key is needed.</p>
           ) : (
             <>
-              <p className="muted">Read-only API key. It goes straight to the secrets vault and is never shown again.</p>
+              <p className="muted">Read-only API key. It goes straight to the secrets vault and is never shown again. The EDR connectors arrive in build phase 4, so this can be added later.</p>
               <div className="row">
                 <input type="password" autoComplete="off" value={keys[r.source] ?? ""} onChange={(e) => setKeys({ ...keys, [r.source]: e.target.value })} placeholder={r.has_credential ? "Replace the stored key" : "Paste the read-only key"} />
                 <button onClick={() => storeKey(r.source)} disabled={(keys[r.source] ?? "").length < 8}>Store key</button>

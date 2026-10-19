@@ -38,6 +38,10 @@ CONSENT_SCOPES = {
 }
 
 
+# Read through the Microsoft 365 consent; they never take a key of their own.
+COVERED_BY_MICROSOFT = {"intune", "defender"}
+
+
 class ConsentIn(BaseModel):
     tenant_ref: str | None = Field(default=None, max_length=200)
 
@@ -167,6 +171,8 @@ def store_credential(office_id: UUID, source: str, body: SecretIn, user: Current
     with tx() as conn:
         can_write(conn, user, office_id)
         row = conn.execute("SELECT mode FROM connection WHERE office_id = %s AND source = %s", (office_id, source)).fetchone()
+        if source in COVERED_BY_MICROSOFT:
+            raise HTTPException(status.HTTP_409_CONFLICT, f"{source} is read through the Microsoft 365 consent; no key is needed")
         if row is None or row["mode"] != "connect":
             raise HTTPException(status.HTTP_409_CONFLICT, f"{source} is not a Connect source for this office")
         arn = vault.put_source_secret(office_id, source, body.value)
@@ -207,9 +213,10 @@ def validate(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
             "action": "" if sites and sites["n"] else "Confirm sites in step 1",
         }
     ]
+    ms_consented = any(c["source"] == "microsoft365" and c["consented"] for c in conns)
     for c in conns:
         if c["mode"] == "connect":
-            ok = c["consented"] or c["has_credential"]
+            ok = c["consented"] or c["has_credential"] or (c["source"] in COVERED_BY_MICROSOFT and ms_consented)
             checks.append(
                 {
                     "check": f"{c['source']} connected",
