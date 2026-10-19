@@ -278,3 +278,62 @@ def test_page_navigation_without_session_goes_to_sign_in_and_back() -> None:
         and safe_next("https://evil.example") == "/"
         and safe_next("/offices/1") == "/offices/1"
     )
+
+
+def test_members_invite_and_remove(client: Any) -> None:
+    oid = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "Members test office", "office_type": "Sheriff", "county": "Lab E"}
+    ).json()["id"]
+    other = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "Other office", "office_type": "Sheriff", "county": "Lab E"}
+    ).json()["id"]
+    lead = {"x-dev-user": "lead@county-demo.org", "x-dev-groups": ""}
+    with (
+        mock.patch("app.directory.ensure_user", return_value="invited") as ensure,
+        mock.patch("app.directory.add_to_group") as group,
+    ):
+        # Platform admin makes the office's administrator.
+        assert (
+            client.post(
+                "/api/members", headers=ADMIN, json={"email": "Lead@County-Demo.org", "role": "office_admin", "office_id": oid}
+            ).status_code
+            == 201
+        )
+        ensure.assert_called_with("lead@county-demo.org")
+        # The office admin invites a colleague to their own office ...
+        assert (
+            client.post(
+                "/api/members", headers=lead, json={"email": "eng@county-demo.org", "role": "office_member", "office_id": oid}
+            ).status_code
+            == 201
+        )
+        # ... but not to another office, and cannot create AOC viewers.
+        assert (
+            client.post(
+                "/api/members", headers=lead, json={"email": "x@county-demo.org", "role": "office_member", "office_id": other}
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post("/api/members", headers=lead, json={"email": "x@aoc-demo.org", "role": "aoc_viewer"}).status_code == 403
+        )
+        assert (
+            client.post("/api/members", headers=ADMIN, json={"email": "v@aoc-demo.org", "role": "aoc_viewer"}).status_code == 201
+        )
+        group.assert_called_once_with("v@aoc-demo.org", "aoc_viewer")
+    members = {m["email"]: m["role"] for m in client.get(f"/api/offices/{oid}/members", headers=lead).json()}
+    assert members == {"lead@county-demo.org": "office_admin", "eng@county-demo.org": "office_member"}
+    assert client.delete(f"/api/offices/{oid}/members/eng@county-demo.org", headers=lead).status_code == 200
+    assert client.delete(f"/api/offices/{oid}/members/lead@county-demo.org", headers=lead).status_code == 409  # not yourself
+    eng = {"x-dev-user": "eng@county-demo.org", "x-dev-groups": ""}
+    assert client.get(f"/api/offices/{oid}", headers=eng).status_code == 404  # access gone with the membership
+    actions = [a["action"] for a in client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()]
+    assert actions[:3] == ["member.remove", "member.add", "member.add"]
+
+    with mock.patch(
+        "app.directory.list_users",
+        return_value=[{"email": "lead@county-demo.org", "status": "CONFIRMED", "enabled": True, "groups": []}],
+    ):
+        people = {p["email"]: p for p in client.get("/api/admin/users", headers=ADMIN).json()}
+    assert people["lead@county-demo.org"]["offices"][0]["role"] == "office_admin"
+    assert client.get("/api/admin/users", headers=lead).status_code == 403

@@ -7,6 +7,7 @@ import Aoc from "./pages/Aoc";
 import Audit from "./pages/Audit";
 import Planned from "./pages/Planned";
 import Posture, { PosturePicker } from "./pages/Posture";
+import OfficeMembers, { Users } from "./pages/Members";
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
@@ -42,6 +43,7 @@ export default function App() {
             </NavLink>
           ))}
           {me.is_aoc && <NavLink to="/aoc">AOC view</NavLink>}
+          {me.is_admin && <NavLink to="/users">Users</NavLink>}
           <div className="nav-foot">
             <div className="who">{me.email}</div>
             <div className="env">{me.environment}</div>
@@ -55,6 +57,8 @@ export default function App() {
             <Route path="/offices/:officeId/onboarding/:step" element={<Wizard />} />
             <Route path="/offices/:officeId/audit" element={<Audit />} />
             <Route path="/aoc" element={<Aoc />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/offices/:officeId/members" element={<OfficeMembers />} />
             <Route path="/posture" element={<PosturePicker />} />
             <Route path="/offices/:officeId/posture" element={<Posture />} />
             <Route path="/findings" element={<Planned area="Findings" phase="5" what="Each gap becomes a finding with a recommendation and an owner." />} />
