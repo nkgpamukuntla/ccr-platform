@@ -184,3 +184,25 @@ def test_facts_summarise_licences_and_devices() -> None:
     assert f["licences"] == [{"sku": "SPE_E5", "enabled": 25, "consumed": 20}]
     assert f["devices"] == {"total": 2, "managed": 1, "compliant": 0}
     assert json.dumps(f)  # stored as JSON
+
+
+def test_risk_based_policy_is_not_mfa_for_everyone() -> None:
+    risky = policy("MFA on high user risk")
+    risky["conditions"]["userRiskLevels"] = ["high"]
+    assert states(bundle(ca=[risky]))[1] == "gap"
+    legacy_only = policy("MFA for legacy clients only")
+    legacy_only["conditions"]["clientAppTypes"] = ["exchangeActiveSync", "other"]
+    assert states(bundle(ca=[legacy_only]))[1] == "gap"
+
+
+def test_seeded_lab_a_shape() -> None:
+    """The CDX lab after seeding: unconditional MFA policy report-only, risk policies report-only, admin on SMS."""
+    vendor = policy("MFA for partners and vendors", state="enabledForReportingButNotEnforced")
+    risk = policy("Reauth on sign-in risk", state="enabledForReportingButNotEnforced")
+    risk["conditions"]["signInRiskLevels"] = ["high", "medium"]
+    regs = [
+        {"userPrincipalName": "lab-admin-sms@lab", "isAdmin": True, "isMfaRegistered": True, "methodsRegistered": ["mobilePhone"]}
+    ]
+    r = {x.control: x for x in evaluate(bundle(ca=[vendor, risk], regs=regs))}
+    assert r[1].state == "weak" and r[1].detail["report_only_policies"] == ["MFA for partners and vendors"]
+    assert r[2].state == "gap" and r[3].state == "weak"

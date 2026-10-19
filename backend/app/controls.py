@@ -58,6 +58,17 @@ def _requires_mfa(p: dict[str, Any]) -> bool:
     return "mfa" in (g.get("builtInControls") or []) or bool(g.get("authenticationStrength"))
 
 
+def _unconditional(p: dict[str, Any]) -> bool:
+    """MFA required on every sign-in: not only when Microsoft detects user or sign-in risk,
+    and not only for some client apps. A risk-based policy is not MFA for everyone."""
+    c = p.get("conditions") or {}
+    risk = (
+        c.get("userRiskLevels") or c.get("signInRiskLevels") or c.get("servicePrincipalRiskLevels") or c.get("insiderRiskLevels")
+    )
+    apps = c.get("clientAppTypes") or ["all"]
+    return not risk and "all" in apps
+
+
 def _covers_all_users(p: dict[str, Any]) -> bool:
     users = (p.get("conditions") or {}).get("users") or {}
     return "All" in (users.get("includeUsers") or [])
@@ -85,8 +96,10 @@ def evaluate(bundle: dict[str, Any]) -> list[ControlResult]:
     sd_on = sd_known and bool(sd_items and sd_items[0].get("isEnabled"))
     ca_known = _status(reads, "ca_policies") == 200
     policies = items(reads.get("ca_policies", {}))
-    enabled = [p for p in policies if p.get("state") == "enabled" and _requires_mfa(p)]
-    report_only = [p for p in policies if p.get("state") == "enabledForReportingButNotEnforced" and _requires_mfa(p)]
+    enabled = [p for p in policies if p.get("state") == "enabled" and _requires_mfa(p) and _unconditional(p)]
+    report_only = [
+        p for p in policies if p.get("state") == "enabledForReportingButNotEnforced" and _requires_mfa(p) and _unconditional(p)
+    ]
     graph_method = "Connected · Graph"
 
     results: list[ControlResult] = []
