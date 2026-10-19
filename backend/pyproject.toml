@@ -1,0 +1,43 @@
+[project]
+name = "ccr-platform"
+version = "0.1.0"
+description = "Court Connection Readiness platform: onboarding, evidence and posture for court sites"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi==0.118.0",
+    "uvicorn[standard]==0.37.0",
+    "psycopg[binary]==3.2.10",
+    "psycopg-pool==3.2.6",
+    "pydantic-settings==2.11.0",
+    "email-validator==2.3.0",
+    "pyjwt[crypto]==2.10.1",
+    "httpx==0.28.1",
+    "boto3==1.40.45",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==8.4.2",
+    "ruff==0.13.3",
+    "mypy==1.18.2",
+    "pgserver==0.1.4",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101"]
+
+[tool.mypy]
+strict = true
+ignore_missing_imports = true

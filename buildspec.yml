@@ -1,0 +1,22 @@
+# Runs on the ARM CodeBuild project from infra (ec-<env>-app-build). Source = a zip of a
+# committed revision uploaded by scripts/deploy.ps1. Pushes one immutable tag.
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  pre_build:
+    commands:
+      - test -n "$IMAGE_TAG" && test -n "$ECR_REPOSITORY_URL"
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "${ECR_REPOSITORY_URL%%/*}"
+      - |
+        if aws ecr describe-images --repository-name "${ECR_REPOSITORY_URL#*/}" --image-ids imageTag="$IMAGE_TAG" >/dev/null 2>&1; then
+          echo "image $IMAGE_TAG already exists"; export SKIP=1
+        fi
+  build:
+    commands:
+      - if [ -z "$SKIP" ]; then docker build --platform linux/arm64 -t "$ECR_REPOSITORY_URL:$IMAGE_TAG" .; fi
+  post_build:
+    commands:
+      - if [ -z "$SKIP" ] && [ "$CODEBUILD_BUILD_SUCCEEDING" = "1" ]; then docker push "$ECR_REPOSITORY_URL:$IMAGE_TAG"; fi
