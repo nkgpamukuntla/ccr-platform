@@ -27,7 +27,13 @@ from cryptography.hazmat.primitives.serialization import Encoding
 GRAPH = "https://graph.microsoft.com/v1.0"
 MS_GRAPH_APP_ID = "00000003-0000-0000-c000-000000000000"
 AZURE_CLI_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"  # Microsoft first-party public client
-PERMISSIONS = ["Policy.Read.All", "RoleManagement.Read.Directory", "AuditLog.Read.All", "Device.Read.All", "LicenseAssignment.Read.All"]
+# Keep in step with backend/app/microsoft/graph.py PERMISSIONS: our seven reads plus the
+# SCuBA (ScubaGear) Entra collection. All application permissions, all read-only.
+PERMISSIONS = [
+    "AuditLog.Read.All", "Device.Read.All", "Directory.Read.All", "LicenseAssignment.Read.All", "Policy.Read.All",
+    "PrivilegedAccess.Read.AzureADGroup", "PrivilegedEligibilitySchedule.Read.AzureADGroup", "RoleManagement.Read.Directory",
+    "RoleManagementPolicy.Read.AzureADGroup", "User.Read.All",
+]
 
 
 def sign_in(tenant: str) -> str:

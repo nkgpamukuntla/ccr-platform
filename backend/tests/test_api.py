@@ -238,6 +238,8 @@ def test_collection_to_posture_end_to_end(client: Any) -> None:
                 else {"name": rd.name, "status": 404, "pages": []},
             ),
             mock.patch("app.worker.boto3.client", return_value=FakeS3()),
+            mock.patch("app.worker.scuba_aad.LiveGraph", return_value=mock.Mock(responses={})),
+            mock.patch("app.worker.scuba_aad.build_provider"),
         ):
             assert worker.collect_one(s, mock.Mock(), mock.Mock(), oid, tenant, "fp") == "collected"
 
@@ -337,3 +339,81 @@ def test_members_invite_and_remove(client: Any) -> None:
         people = {p["email"]: p for p in client.get("/api/admin/users", headers=ADMIN).json()}
     assert people["lead@county-demo.org"]["offices"][0]["role"] == "office_admin"
     assert client.get("/api/admin/users", headers=lead).status_code == 403
+
+
+def test_scuba_import_and_findings(client: Any) -> None:
+    import json as _json
+
+    sample = (Path(__file__).parent / "fixtures" / "scuba" / "sample-ScubaResults.json").read_bytes()
+    oid = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "SCuBA import office", "office_type": "County IT", "county": "Lab A"}
+    ).json()["id"]
+    r = client.post(f"/api/offices/{oid}/scuba-import", headers=ADMIN, content=sample)
+    assert r.status_code == 201, r.text
+    assert set(r.json()["products"]) == {"AAD", "Defender", "EXO", "PowerPlatform", "SharePoint", "Teams"}
+    f = client.get(f"/api/offices/{oid}/findings", headers=ADMIN).json()
+    assert f["summary"]["EXO"] and all(x["source"] == "imported" for x in f["results"])
+    exo = [x for x in f["results"] if x["policy_id"].startswith("MS.EXO.")]
+    assert exo and exo[0]["baseline"] == "v1.8.0" and "<" not in exo[0]["requirement"]  # HTML stripped
+
+    # A report for another tenant than the one that consented is refused.
+    other = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "Consented office", "office_type": "County IT", "county": "Lab A"}
+    ).json()["id"]
+    client.post(
+        f"/api/offices/{other}/consents/microsoft365", headers=ADMIN, json={"tenant_ref": "11111111-2222-3333-4444-555555555555"}
+    )
+    assert client.post(f"/api/offices/{other}/scuba-import", headers=ADMIN, content=sample).status_code == 409
+    assert client.post(f"/api/offices/{other}/scuba-import", headers=ADMIN, content=_json.dumps({"hello": 1})).status_code == 422
+
+
+def test_evaluator_scores_collected_scuba(client: Any) -> None:
+    """A bundle with recorded Entra responses gets ScubaGear's results stored and controls 1-3 rolled up."""
+    import io
+    import json as _json
+
+    from tests.test_scuba import OPA, mfa_policy, tenant
+
+    if not Path(OPA).exists():
+        pytest.skip("OPA not installed")
+    os.environ["OPA_PATH"] = OPA
+    oid = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "SCuBA collected office", "office_type": "County IT", "county": "Lab A"}
+    ).json()["id"]
+    bundle = {
+        "run_id": None,
+        "office_id": oid,
+        "ms_tenant_id": "1ac3b327-2499-4778-8b7d-8d7eab7040b8",
+        "reads": [],
+        "scuba_aad": {"baseline": "v1.8.0", "responses": tenant([mfa_policy()])},
+    }
+    try:
+        _as_role("ec_worker")
+        from app import db
+
+        with db.tx() as conn:
+            run = conn.execute(
+                "INSERT INTO collection_run (office_id, source, ms_tenant_id, status, s3_key, finished_at) "
+                "VALUES (%s, 'microsoft365', %s, 'collected', 'k', now()) RETURNING id",
+                (oid, bundle["ms_tenant_id"]),
+            ).fetchone()
+        bundle["run_id"] = str(run["id"])
+        body = _json.dumps(bundle).encode()
+
+        class S3:
+            def get_object(self, **_: Any) -> dict[str, Any]:
+                return {"Body": io.BytesIO(body)}
+
+        _as_role("ec_evaluator")
+        from app.evaluator import evaluate_pending
+
+        assert evaluate_pending(S3(), "raw") == {"evaluated": 1, "failed": 0}
+    finally:
+        _as_role("ec_portal")
+    f = client.get(f"/api/offices/{oid}/findings", headers=ADMIN).json()
+    by = {x["policy_id"]: x for x in f["results"]}
+    assert len(by) == 30 and by["MS.AAD.3.2v1"]["status"] == "pass" and by["MS.AAD.3.2v1"]["source"] == "collected"
+    assert "Legacy authentication" in by["MS.AAD.1.1v1"]["requirement"]
+    posture = {c["control"]: c for c in client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()["controls"]}
+    assert posture[1]["method"].startswith("Connected · SCuBA v1.8.0")
+    assert posture[1]["detail"]["required"]["MS.AAD.3.2v1"] == "pass"

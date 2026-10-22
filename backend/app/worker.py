@@ -26,6 +26,7 @@ from app.config import Settings, get_settings
 from app.microsoft import graph
 from app.microsoft.signer import KmsSigner
 from app.microsoft.token import TokenError, get_token
+from app.scuba import aad as scuba_aad
 
 log = logging.getLogger("worker")
 UUID_RE = "^[0-9a-fA-F-]{36}$"
@@ -66,6 +67,9 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
     try:
         token = get_token(http, signer, s.ms_client_id, ms_tenant, s.ms_cert_thumbprint_sha1, s.ms_cert_thumbprint_sha256)
         reads = [graph.fetch(http, token, r) for r in graph.READS]
+        # ScubaGear's Entra collection (ported): every response recorded for the evaluator to replay.
+        live = scuba_aad.LiveGraph(http, token)
+        scuba_aad.build_provider(live)
         bundle = {
             "schema": "ccr.raw.microsoft365.v1",
             "run_id": str(run_id),
@@ -76,6 +80,7 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
             "started_at": started,
             "finished_at": datetime.now(UTC).isoformat(),
             "reads": reads,
+            "scuba_aad": {"baseline": "v1.8.0", "responses": live.responses},
         }
         key = f"{office_id}/microsoft365/{run_id}.json"
         put = boto3.client("s3", region_name=s.aws_region).put_object(
@@ -87,7 +92,9 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
             SSEKMSKeyId=raw_key,  # the bucket policy refuses any other key for this prefix
             BucketKeyEnabled=False,
         )
-        summary = {r["name"]: r["status"] for r in reads}
+        summary: dict[str, Any] = {r["name"]: r["status"] for r in reads}
+        summary["scuba_aad_calls"] = len(live.responses)
+        summary["scuba_aad_not_ok"] = sum(1 for v in live.responses.values() if v["status"] != 200)
         with db.tx() as conn:
             conn.execute(
                 "UPDATE collection_run SET status = 'collected', finished_at = now(), s3_key = %s, s3_version_id = %s, "

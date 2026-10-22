@@ -271,8 +271,14 @@ function Connect({ officeId, next }: { officeId: string; next: () => void }) {
             <>
               <p className="muted">Read-only application permissions. Not requested: mail, files, Teams messages, any write permission.</p>
               <ul>{r.scopes.map((s) => <li key={s}><code>{s}</code></li>)}</ul>
-              {r.consent_status === "granted" ? (
+              {r.consent_status === "granted" && !r.consent_outdated ? (
                 <p>Consent granted {r.granted_at && new Date(r.granted_at).toLocaleString()} {r.tenant_ref && `by tenant ${r.tenant_ref}`}. <button className="secondary" onClick={() => revoke(r.source)}>Revoke record</button></p>
+              ) : r.consent_status === "granted" && r.consent_outdated && me.microsoft_configured ? (
+                <>
+                  <div className="pill warn">Consent covers an earlier permission set</div>
+                  <p>Read-only permissions were added so the platform can score the CISA SCuBA baselines. The tenant's Global Administrator approves the updated list once; until then those policies show as Error (not observed).</p>
+                  <a href={`/api/offices/${officeId}/consents/microsoft365/start`}><button type="button">Grant updated consent</button></a>
+                </>
               ) : me.microsoft_configured ? (
                 <>
                   {params.get("consent") === "refused" && <div className="error">Consent was not granted. A Global Administrator of the county's tenant must approve it.</div>}
@@ -313,9 +319,32 @@ function ImportCollect({ officeId, next }: { officeId: string; next: () => void 
     api<Connection[]>(`/api/offices/${officeId}/connections`).then(setRows);
   }, [officeId]);
   const other = rows.filter((r) => r.mode !== "connect");
+  const [scubaMsg, setScubaMsg] = useState("");
+  const [scubaErr, setScubaErr] = useState("");
+  const uploadScuba = async (file: File | undefined) => {
+    setScubaMsg("");
+    setScubaErr("");
+    if (!file) return;
+    try {
+      const doc = JSON.parse(await file.text());
+      delete doc.Raw; // the raw provider data is not needed and can be large
+      const r = await post<{ results: number; products: string[] }>(`/api/offices/${officeId}/scuba-import`, doc);
+      setScubaMsg(`Imported ${r.results} SCuBA results for ${r.products.join(", ")}. See Findings.`);
+    } catch (e) {
+      setScubaErr((e as Error).message);
+    }
+  };
   return (
     <div className="card">
-      <h2 style={{ marginTop: 0 }}>Files from the county's own tools, and the collector</h2>
+      <h2 style={{ marginTop: 0 }}>ScubaGear report (optional)</h2>
+      <p className="muted">
+        If the office runs CISA ScubaGear itself, upload its <code>ScubaResults_*.json</code>. It covers Exchange Online, Defender, SharePoint, Teams and Power
+        Platform, which are not read directly. Results are labelled Imported, with the tool version and date. The report must be for the tenant that granted consent.
+      </p>
+      <input type="file" accept=".json,application/json" onChange={(e) => uploadScuba(e.target.files?.[0])} />
+      {scubaMsg && <p><span className="pill pass">{scubaMsg}</span></p>}
+      {scubaErr && <div className="error">{scubaErr}</div>}
+      <h2>Files from the county's own tools, and the collector</h2>
       {other.length === 0 ? (
         <p className="muted">Everything on this path is connected by API.</p>
       ) : (

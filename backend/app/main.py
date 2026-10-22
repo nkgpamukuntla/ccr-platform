@@ -17,7 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app import auth, db
 from app.auth import CurrentUser, safe_next
 from app.config import get_settings
-from app.routers import aoc, microsoft, offices, onboarding, users
+from app.routers import aoc, findings, microsoft, offices, onboarding, users
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app.include_router(onboarding.router)
 app.include_router(onboarding.preview_router)
 app.include_router(microsoft.router)
 app.include_router(users.router)
+app.include_router(findings.router)
 app.include_router(aoc.router)
 
 

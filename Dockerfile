@@ -20,6 +20,12 @@ COPY backend/app ./app
 COPY backend/migrations ./migrations
 
 FROM public.ecr.aws/docker/library/python:3.12-slim-bookworm
+# Open Policy Agent, the engine ScubaGear 1.8.0 uses (default 1.15.2), to run the vendored SCuBA
+# rules inside the fenced evaluator. Pinned and checked against the release's published SHA-256.
+ARG OPA_VERSION=1.15.2
+ARG OPA_SHA256=6651bf5a80cfec6ba6a2d3b6a550b8f748d9cade1c74d54b5f854782f9bea67a
+ADD --checksum=sha256:${OPA_SHA256} https://github.com/open-policy-agent/opa/releases/download/v${OPA_VERSION}/opa_linux_arm64_static /usr/local/bin/opa
+RUN chmod 0755 /usr/local/bin/opa && /usr/local/bin/opa version
 RUN useradd --uid 10001 --no-create-home app
 WORKDIR /app
 COPY --from=backend --chown=app:app /app /app

@@ -13,6 +13,7 @@ from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.config import get_settings
 from app.db import tx
+from app.microsoft.graph import PERMISSIONS
 from app.profiles import EnvironmentAnswers, PathItem, ProfileResult, classify
 from app.routers.offices import complete_step
 
@@ -27,15 +28,7 @@ def preview(answers: EnvironmentAnswers, user: CurrentUser) -> ProfileResult:
 
 
 # What each source's consent covers, shown before consent (walkthrough slide 18).
-CONSENT_SCOPES = {
-    "microsoft365": [
-        "Policy.Read.All",
-        "RoleManagement.Read.Directory",
-        "AuditLog.Read.All",
-        "Device.Read.All",
-        "LicenseAssignment.Read.All",
-    ],
-}
+CONSENT_SCOPES = {"microsoft365": PERMISSIONS}
 
 
 # Read through the Microsoft 365 consent; they never take a key of their own.
@@ -120,13 +113,16 @@ def connections(office_id: UUID, user: CurrentUser) -> list[dict[str, Any]]:
         can_read(conn, user, office_id)
         rows = conn.execute(
             "SELECT c.source, c.mode, c.status, c.last_test_at, c.secret_arn IS NOT NULL AS has_credential, "
-            "k.status AS consent_status, k.granted_at, k.tenant_ref "
+            "k.status AS consent_status, k.granted_at, k.tenant_ref, k.scopes AS granted_scopes "
             "FROM connection c LEFT JOIN consent k ON k.office_id = c.office_id AND k.source = c.source "
             "AND k.status = 'granted' WHERE c.office_id = %s ORDER BY c.source",
             (office_id,),
         ).fetchall()
         for r in rows:
             r["scopes"] = CONSENT_SCOPES.get(r["source"], [])
+            granted = set(r.pop("granted_scopes") or [])
+            # Consent given before permissions were added must be granted again to cover them.
+            r["consent_outdated"] = r["consent_status"] == "granted" and bool(set(r["scopes"]) - granted)
         return rows
 
 

@@ -17,9 +17,60 @@ from psycopg.types.json import Jsonb
 
 from app import db
 from app.config import get_settings
-from app.controls import evaluate, facts
+from app.controls import ControlResult, evaluate, facts
+from app.scuba import aad as scuba_aad
+from app.scuba.baseline import requirement
+from app.scuba.evaluate import BASELINE, ScubaResult, evaluate_aad, rollup
 
 log = logging.getLogger("evaluator")
+
+
+def scuba_results(bundle: dict[str, Any]) -> list[ScubaResult]:
+    """ScubaGear's Entra rules over the recorded responses; empty if the bundle has none or OPA fails."""
+    rec = bundle.get("scuba_aad")
+    if not rec or not rec.get("responses"):
+        return []
+    try:
+        provider = scuba_aad.build_provider(scuba_aad.RecordedGraph(rec["responses"]))
+        return evaluate_aad(scuba_aad.opa_input(provider, bundle["ms_tenant_id"]))
+    except Exception as e:  # noqa: BLE001 - SCuBA scoring is additive; the controls still evaluate
+        log.error(
+            json.dumps({"event": "scuba_failed", "run": bundle.get("run_id"), "error": f"{type(e).__name__}: {str(e)[:300]}"})
+        )
+        return []
+
+
+def _aligned(r: ControlResult, scuba: list[ScubaResult]) -> ControlResult:
+    """Controls 1-3 take their state from the SCuBA policies they map to (IRMA roll-up)."""
+    up = rollup(r.control, scuba)
+    if up is None:
+        return r
+    state, detail = up
+    if state == "not_observed":
+        # SCuBA could not establish it (e.g. consent not yet updated): keep the Graph reading, say why.
+        return r.model_copy(
+            update={"detail": {**r.detail, "scuba": {**detail, "note": "SCuBA rules could not evaluate; Graph reading shown"}}}
+        )
+    return r.model_copy(
+        update={"state": state, "method": f"Connected · SCuBA {BASELINE} rules", "detail": {**detail, "graph_reading": r.detail}}
+    )
+
+
+def _store_scuba(conn: Any, run: dict[str, Any], bundle: dict[str, Any], scuba: list[ScubaResult]) -> None:
+    summary: dict[str, int] = {}
+    for x in scuba:
+        summary[x.status] = summary.get(x.status, 0) + 1
+    a = conn.execute(
+        "INSERT INTO scuba_assessment (office_id, source, run_id, baseline, tenant_id, assessed_at, products, summary) "
+        "VALUES (%s, 'collected', %s, %s, %s, %s, %s, %s) RETURNING id",
+        (run["office_id"], run["id"], BASELINE, bundle["ms_tenant_id"], run["finished_at"], ["aad"], Jsonb(summary)),
+    ).fetchone()
+    for x in scuba:
+        conn.execute(
+            "INSERT INTO scuba_result (assessment_id, product, policy_id, requirement, criticality, status, details) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (a["id"], x.product, x.policy_id, requirement(x.policy_id), x.criticality, x.status, x.details),
+        )
 
 
 def evaluate_pending(s3: Any, bucket: str, limit: int = 50) -> dict[str, int]:
@@ -39,7 +90,12 @@ def evaluate_pending(s3: Any, bucket: str, limit: int = 50) -> dict[str, int]:
             if bundle.get("run_id") != str(run["id"]) or bundle.get("office_id") != str(run["office_id"]):
                 raise ValueError("bundle does not match its run record")
             results = evaluate(bundle)
+            scuba = scuba_results(bundle)
+            if scuba:
+                results = [_aligned(r, scuba) for r in results]
             with db.tx() as conn:
+                if scuba:
+                    _store_scuba(conn, run, bundle, scuba)
                 for r in results:
                     conn.execute(
                         "INSERT INTO control_result (run_id, office_id, control, name, state, method, detail, as_of) "

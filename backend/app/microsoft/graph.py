@@ -11,6 +11,8 @@ from typing import Any
 
 import httpx
 
+from app.scuba.aad import PERMISSIONS as _SCUBA_AAD_PERMISSIONS
+
 GRAPH = "https://graph.microsoft.com"
 MAX_PAGES = 50
 
@@ -40,7 +42,8 @@ READS = [
     Read("subscribed_skus", "/v1.0/subscribedSkus", "LicenseAssignment.Read.All"),
 ]
 
-PERMISSIONS = sorted({r.permission for r in READS})
+# Our seven reads plus what ScubaGear's Entra collection needs (app/scuba/aad.py); all read-only.
+PERMISSIONS = sorted({r.permission for r in READS} | set(_SCUBA_AAD_PERMISSIONS))
 KEEP_HEADERS = ("request-id", "client-request-id", "date", "x-ms-ags-diagnostic")
 
 
