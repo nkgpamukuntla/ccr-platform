@@ -210,3 +210,26 @@ def test_registration_script_requests_exactly_the_permissions_the_app_uses() -> 
     src = (Path(__file__).parents[2] / "scripts" / "register_microsoft_app.py").read_text(encoding="utf-8")
     node = next(n for n in ast.parse(src).body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "PERMISSIONS")
     assert sorted(ast.literal_eval(node.value)) == PERMISSIONS
+
+
+def test_beta_authorization_policy_collection_is_unwrapped_like_trycommand() -> None:
+    """Found against the CDX tenant: beta authorizationPolicy answers as a collection; ScubaGear scores
+    the policy inside it. Users allowed to create apps and anyone allowed to invite must fail 5.1 / warn 8.2."""
+    r = tenant([mfa_policy()])
+    r[aad.path("Get-MgBetaPolicyAuthorizationPolicy")] = ok(
+        {
+            "@odata.context": "x",
+            "value": [
+                {
+                    "id": "authorizationPolicy",
+                    "allowInvitesFrom": "everyone",
+                    "guestUserRoleId": "10dae51f-b6af-4016-8d66-8c2a99b929b3",
+                    "defaultUserRolePermissions": {"allowedToCreateApps": True},
+                    "permissionGrantPolicyIdsAssignedToDefaultUserRole": [],
+                }
+            ],
+        }
+    )
+    out = run(r)
+    assert out["MS.AAD.5.1v1"].status == "fail"
+    assert out["MS.AAD.8.2v1"].status == "warning"

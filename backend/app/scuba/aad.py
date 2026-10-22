@@ -226,15 +226,30 @@ def privileged_roles(get: Get, premium: bool) -> list[dict[str, Any]]:
     return roles
 
 
+def _direct(get: Get, cmdlet: str) -> Any:
+    """CommandTracker.TryCommand with GraphDirect: the pascal-cased response, or its `Value` list when
+    that list is non-empty (`if ($Result.value) { $Result = $Result.value }`). Graph's beta
+    endpoints return some single objects as a collection (e.g. authorizationPolicy), so this matters."""
+    r = pascal(get(path(cmdlet)))
+    if isinstance(r, dict) and r.get("Value"):
+        return r["Value"]
+    return r
+
+
+def _as_list(x: Any) -> list[Any]:
+    """ConvertTo-Json @($x): a single object becomes a one-element array; an empty result stays empty."""
+    if x is None:
+        return []
+    return x if isinstance(x, list) else [x]
+
+
 def build_provider(get: Get) -> dict[str, Any]:
     """Export-AADProvider: the AAD part of ScubaGear's ProviderSettingsExport.json."""
     t = Tracker()
-    policies = t.run(
-        "Get-MgBetaIdentityConditionalAccessPolicy",
-        lambda: pascal(get(path("Get-MgBetaIdentityConditionalAccessPolicy"))).get("Value", []),
-        [],
+    policies = _as_list(
+        t.run("Get-MgBetaIdentityConditionalAccessPolicy", lambda: _direct(get, "Get-MgBetaIdentityConditionalAccessPolicy"), [])
     )
-    skus = t.run("Get-MgBetaSubscribedSku", lambda: pascal(get(path("Get-MgBetaSubscribedSku"))).get("Value", []), [])
+    skus = _as_list(t.run("Get-MgBetaSubscribedSku", lambda: _direct(get, "Get-MgBetaSubscribedSku"), []))
     service_plans = [sp for s in skus for sp in (s.get("ServicePlans") or []) if sp.get("ProvisioningStatus") == "Success"]
 
     privileged_users: dict[str, Any] = {}
@@ -250,24 +265,24 @@ def build_provider(get: Get) -> dict[str, Any]:
         t.failed += ["Get-PrivilegedRole", "Get-PrivilegedUser"]
 
     count = t.run("Get-MgBetaUserCount", lambda: get(path("Get-MgBetaUserCount")), -1)
-    authz = t.run("Get-MgBetaPolicyAuthorizationPolicy", lambda: pascal(get(path("Get-MgBetaPolicyAuthorizationPolicy"))), None)
-    settings = t.run("Get-MgBetaDirectorySetting", lambda: pascal(get(path("Get-MgBetaDirectorySetting"))).get("Value", []), [])
-    amp = t.run(
-        "Get-MgBetaPolicyAuthenticationMethodPolicy",
-        lambda: pascal(get(path("Get-MgBetaPolicyAuthenticationMethodPolicy"))),
-        None,
+    authz = _as_list(
+        t.run("Get-MgBetaPolicyAuthorizationPolicy", lambda: _direct(get, "Get-MgBetaPolicyAuthorizationPolicy"), [])
     )
-    domains = t.run("Get-MgBetaDomain", lambda: pascal(get(path("Get-MgBetaDomain"))).get("Value", []), [])
+    settings = _as_list(t.run("Get-MgBetaDirectorySetting", lambda: _direct(get, "Get-MgBetaDirectorySetting"), []))
+    amp = t.run(
+        "Get-MgBetaPolicyAuthenticationMethodPolicy", lambda: _direct(get, "Get-MgBetaPolicyAuthenticationMethodPolicy"), None
+    )
+    domains = _as_list(t.run("Get-MgBetaDomain", lambda: _direct(get, "Get-MgBetaDomain"), []))
 
     auth_method: list[dict[str, Any]] = []
-    if amp is not None:
+    if isinstance(amp, dict):
         features = [c for c in (amp.get("AuthenticationMethodConfigurations") or []) if c.get("Id")]
         root = {k: v for k, v in amp.items() if k != "AuthenticationMethodConfigurations"}
         auth_method = [{"authentication_method_policy": root, "authentication_method_feature_settings": features}]
 
     return {
         "conditional_access_policies": policies,
-        "authorization_policies": [authz] if authz is not None else [],
+        "authorization_policies": authz,
         "privileged_users": privileged_users,
         "privileged_service_principals": privileged_sps,
         "privileged_roles": roles,
