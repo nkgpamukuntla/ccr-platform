@@ -1,6 +1,6 @@
 """Run ScubaGear's own SCuBA rules with OPA, exactly as ScubaGear does, and classify each result.
 
-    opa eval data.aad.tests -i <input> -d AADConfig.rego -d Utils -f values
+    opa eval data.aad.tests -i <input> -d AADConfig.rego -d Utils -f values   (input passed on stdin here)
 
 Results keep ScubaGear's fields (PolicyId, Criticality, RequirementMet, ReportDetails,
 Commandlet, ActualValue). The status follows ScubaGear's report: Pass, Fail (a SHALL not met),
@@ -12,7 +12,6 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any, Literal
 
@@ -42,23 +41,21 @@ def opa_path() -> str:
 
 
 def run_opa(product_input: dict[str, Any], package: str = "aad", rego: str = "AADConfig.rego") -> list[dict[str, Any]]:
-    with tempfile.TemporaryDirectory() as tmp:
-        input_file = Path(tmp) / "input.json"
-        input_file.write_text(json.dumps(product_input), encoding="utf-8")
-        cmd = [
-            opa_path(),
-            "eval",
-            f"data.{package}.tests",
-            "-i",
-            str(input_file),
-            "-d",
-            str(REGO_DIR / rego),
-            "-d",
-            str(REGO_DIR / "Utils"),
-            "-f",
-            "values",
-        ]
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)  # noqa: S603 - fixed argv, no shell
+    # Input goes in on stdin (--stdin-input): the evaluator's container has a read-only root
+    # filesystem, and evidence should not touch disk anyway. Same evaluation as `-i <file>`.
+    cmd = [
+        opa_path(),
+        "eval",
+        f"data.{package}.tests",
+        "--stdin-input",
+        "-d",
+        str(REGO_DIR / rego),
+        "-d",
+        str(REGO_DIR / "Utils"),
+        "-f",
+        "values",
+    ]
+    out = subprocess.run(cmd, input=json.dumps(product_input), capture_output=True, text=True, timeout=120, check=False)  # noqa: S603 - fixed argv, no shell
     if out.returncode != 0:
         raise RuntimeError(f"opa eval failed: {out.stderr[:1000]}")
     values = json.loads(out.stdout)
