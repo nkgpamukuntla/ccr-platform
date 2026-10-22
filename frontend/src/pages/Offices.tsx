@@ -72,6 +72,7 @@ export default function Offices() {
                 <Link to={`/offices/${r.id}/onboarding/${nextStep(r)}`}>{r.live_at ? "Review" : "Continue"}</Link>
                 <Link to={`/offices/${r.id}/posture`}>Posture</Link>
                 <Link to={`/offices/${r.id}/findings`}>Findings</Link>
+                <Link to={`/offices/${r.id}/devices`}>Devices</Link>
                 <Link to={`/offices/${r.id}/members`}>Members</Link>
                 <Link to={`/offices/${r.id}/audit`}>Audit</Link>
               </td>

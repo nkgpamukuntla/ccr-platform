@@ -417,3 +417,39 @@ def test_evaluator_scores_collected_scuba(client: Any) -> None:
     posture = {c["control"]: c for c in client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()["controls"]}
     assert posture[1]["method"].startswith("Connected · SCuBA v1.8.0")
     assert posture[1]["detail"]["required"]["MS.AAD.3.2v1"] == "pass"
+
+
+def test_import_flow_and_device_register(client: Any) -> None:
+    from tests.test_imports import FALCON, RMM
+
+    oid = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "Import office", "office_type": "County IT", "county": "Lab A"}
+    ).json()["id"]
+    p = client.post(f"/api/offices/{oid}/imports/preview?template=edr_hosts", headers=ADMIN, content=FALCON).json()
+    assert p["accepted"] and p["rows_ok"] == 3 and len(p["sample"]) == 3
+    assert client.get(f"/api/offices/{oid}/imports", headers=ADMIN).json() == []  # preview stores nothing
+
+    r = client.post(
+        f"/api/offices/{oid}/imports?template=edr_hosts&filename=falcon.csv&export_date=2026-10-21", headers=ADMIN, content=FALCON
+    )
+    assert r.status_code == 201 and r.json()["rows_loaded"] == 3
+    assert (
+        client.post(
+            f"/api/offices/{oid}/imports?template=edr_hosts&filename=again.csv", headers=ADMIN, content=FALCON
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(f"/api/offices/{oid}/imports?template=rmm_inventory&filename=rmm.csv", headers=ADMIN, content=RMM).status_code
+        == 201
+    )
+    bad = client.post(f"/api/offices/{oid}/imports?template=edr_hosts&filename=bad.csv", headers=ADMIN, content="Hostname\nX\n")
+    assert bad.status_code == 422
+
+    hist = client.get(f"/api/offices/{oid}/imports", headers=ADMIN).json()
+    assert [h["filename"] for h in hist] == ["rmm.csv", "falcon.csv"] and len(hist[1]["sha256"]) == 64
+    d = client.get(f"/api/offices/{oid}/devices", headers=ADMIN).json()
+    assert d["coverage"] == {"devices": 4, "covered": 2, "uncovered": 2}  # CLERK-FRONT-01 matched across both files
+    assert d["matched"] == 1 and d["unmatched"] == 3
+    actions = [a["action"] for a in client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()]
+    assert actions.count("import.load") == 2

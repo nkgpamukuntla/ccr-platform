@@ -19,7 +19,9 @@ from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.config import Settings, get_settings
 from app.db import tx
+from app.imports import edr_coverage
 from app.microsoft.graph import PERMISSIONS
+from app.routers.imports import office_devices
 
 CONSENT_COOKIE = "ccr_consent"
 router = APIRouter(tags=["microsoft"])
@@ -122,4 +124,20 @@ def posture(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
             (latest["id"],),
         ).fetchall()
         f = conn.execute("SELECT facts FROM run_facts WHERE run_id = %s", (latest["id"],)).fetchone()
+        devs = office_devices(conn, office_id)
+    controls = [_edr_from_devices(c, devs) if c["control"] == 5 else c for c in controls]
     return {"run": latest, "last_attempt": last_attempt, "controls": controls, "facts": f["facts"] if f else None}
+
+
+def _edr_from_devices(c: dict[str, Any], devs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Control 5 from the reconciled device register: coverage is a count, never a yes."""
+    if not devs:
+        return c
+    cov = edr_coverage(devs)
+    state = "met" if cov["uncovered"] == 0 else "gap"
+    return {
+        **c,
+        "state": state,
+        "method": "Imported · device register",
+        "detail": {**cov, "note": f"{cov['covered']} of {cov['devices']} covered"},
+    }

@@ -42,6 +42,8 @@ ignore = ["S101"]
 [tool.ruff.lint.per-file-ignores]
 # Graph paths and baseline IDs are kept on one line each so they can be compared with ScubaGear's source.
 "app/scuba/aad.py" = ["E501"]
+# SQL statements are kept on one line each so they read as one statement.
+"app/routers/imports.py" = ["E501"]
 
 [tool.mypy]
 strict = true

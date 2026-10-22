@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMe } from "../App";
+import { CsvImport } from "./Devices";
 import { api, Answers, Check, Connection, Office, post, Prerequisite, ProfileResult, put, Site } from "../api";
 
 const STEPS = ["Organisation", "Environment", "Prerequisites", "Connect", "Import / Collect", "Validate"];
@@ -344,7 +345,8 @@ function ImportCollect({ officeId, next }: { officeId: string; next: () => void 
       <input type="file" accept=".json,application/json" onChange={(e) => uploadScuba(e.target.files?.[0])} />
       {scubaMsg && <p><span className="pill pass">{scubaMsg}</span></p>}
       {scubaErr && <div className="error">{scubaErr}</div>}
-      <h2>Files from the county's own tools, and the collector</h2>
+      <CsvImport officeId={officeId} />
+      <h2>Sources on this office's path</h2>
       {other.length === 0 ? (
         <p className="muted">Everything on this path is connected by API.</p>
       ) : (
@@ -352,7 +354,7 @@ function ImportCollect({ officeId, next }: { officeId: string; next: () => void 
           <thead><tr><th>Source</th><th>Mode</th><th>Status</th></tr></thead>
           <tbody>
             {other.map((r) => (
-              <tr key={r.source}><td>{r.source}</td><td><span className="pill">{r.mode}</span></td><td className="muted">CSV templates and the signed collector arrive in phase 3</td></tr>
+              <tr key={r.source}><td>{r.source}</td><td><span className="pill">{r.mode}</span></td><td className="muted">{r.mode === "import" ? "Upload above" : r.mode === "collect" ? "Signed collector: next release" : "Questionnaire: next release"}</td></tr>
             ))}
           </tbody>
         </table>

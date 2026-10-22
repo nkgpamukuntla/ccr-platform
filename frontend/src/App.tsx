@@ -9,6 +9,7 @@ import Planned from "./pages/Planned";
 import Posture, { PosturePicker } from "./pages/Posture";
 import OfficeMembers, { Users } from "./pages/Members";
 import Findings, { FindingsPicker } from "./pages/Findings";
+import Devices from "./pages/Devices";
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="/offices/:officeId/posture" element={<Posture />} />
             <Route path="/findings" element={<FindingsPicker />} />
             <Route path="/offices/:officeId/findings" element={<Findings />} />
+            <Route path="/offices/:officeId/devices" element={<Devices />} />
             <Route path="/remediation" element={<Planned area="Remediation" phase="5" what="Work moves across the board and closes only on fresh evidence." />} />
             <Route path="/evidence" element={<Planned area="Evidence pack" phase="5" what="The same evidence rendered for the insurer or the AOC; the county remains the submitter." />} />
             <Route path="*" element={<Navigate to="/offices" replace />} />
