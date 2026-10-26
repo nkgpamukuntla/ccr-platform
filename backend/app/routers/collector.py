@@ -46,9 +46,15 @@ The script reads security configuration only: never files, email, browser data, 
 anything from Gavel. It installs nothing and leaves nothing running.
 
 Signature: {signed}
-If PowerShell refuses to run the script, check its signature with
+If PowerShell refuses to run the script ("not digitally signed" or "root certificate which
+is not trusted"): Windows treats files from the internet as remote, and where an execution
+policy is set by Group Policy (RemoteSigned or AllSigned), -ExecutionPolicy Bypass on the
+command line does not override it. The lab certificate above is not from a public CA, so
+such PCs will not run the script until your IT team trusts it or we move to a commercial
+certificate. Check the signature first:
     Get-AuthenticodeSignature .\\Collect-CCREvidence.ps1
-Ask your CCR contact before changing any execution policy.
+It must show the signer above; HashMismatch means the file was changed, so do not run it.
+Ask your CCR contact before changing any execution policy or trusting the certificate.
 """
 
 
