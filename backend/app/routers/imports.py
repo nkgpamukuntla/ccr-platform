@@ -158,7 +158,8 @@ def history(office_id: UUID, user: CurrentUser) -> list[dict[str, Any]]:
 
 def office_devices(conn: Any, office_id: UUID) -> list[dict[str, Any]]:
     obs = conn.execute(
-        "SELECT source, hostname, serial, os, last_seen, edr_status, managed, site FROM device_observation WHERE office_id = %s ORDER BY id",
+        "SELECT source, hostname, serial, os, last_seen, edr_status, attributes->>'av_status' AS av_status, managed, site "
+        "FROM device_observation WHERE office_id = %s ORDER BY id",
         (office_id,),
     ).fetchall()
     return imports.reconcile(obs)

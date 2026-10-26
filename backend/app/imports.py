@@ -234,9 +234,10 @@ def validate(template_key: str, text: str, max_issues: int = 100) -> Validation:
         os_val = get("os")
         if os_val and not KNOWN_OS.search(os_val) and len(issues) < max_issues:
             issues.append(Issue(row=n, level="warning", message=f"unrecognised OS value '{os_val}'"))
+        # Only an EDR source sets EDR status. An RMM "AV status" is antivirus, kept apart as av_status
+        # so it can't make a device look EDR-covered (control 5).
         status = edr_state(get("edr_status")) if "edr_status" in columns else None
-        if template_key == "rmm_inventory":
-            status = edr_state(get("av_state"))
+        av_status = edr_state(get("av_state")) if "av_state" in columns else None
         managed = get("managed").lower() in ("yes", "true", "1", "y") if "managed" in columns and get("managed") else None
         if template_key in ("rmm_inventory", "intune_devices"):
             managed = True
@@ -250,13 +251,15 @@ def validate(template_key: str, text: str, max_issues: int = 100) -> Validation:
                 "last_seen": last_seen,
                 "edr_product": get("edr_product") or (None if template_key != "edr_hosts" else "EDR console"),
                 "edr_status": status,
+                "av_status": av_status,
                 "managed": managed,
                 "site": get("site") or None,
                 "attributes": {
                     c: get(c)
                     for c in ("agent_id", "agent_version", "compliance", "last_patch", "model", "role", "entra_device_id")
                     if get(c)
-                },
+                }
+                | ({"av_status": av_status} if av_status else {}),
             }
         )
     total = len([r for r in rows[1:] if any(c.strip() for c in r)])
@@ -289,7 +292,8 @@ def template_csv(key: str) -> str:
 
 
 def edr_coverage(devices: list[dict[str, Any]]) -> dict[str, Any]:
-    """Control 5: devices reconciled across sources; covered = an active EDR agent seen in any source."""
+    """Control 5: devices reconciled across sources; covered = an active EDR agent in an EDR source.
+    Antivirus status from RMM does not count."""
     total = len(devices)
     covered = sum(1 for d in devices if d["edr"] == "active")
     return {"devices": total, "covered": covered, "uncovered": total - covered}
@@ -311,6 +315,7 @@ def reconcile(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "os": None,
                 "sources": [],
                 "edr": "none",
+                "av": None,
                 "managed": False,
                 "last_seen": None,
                 "site": None,
@@ -324,6 +329,8 @@ def reconcile(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
             d["sources"].append(o["source"])
         if o.get("edr_status") == "active" or (d["edr"] != "active" and o.get("edr_status") == "inactive"):
             d["edr"] = o["edr_status"]
+        if o.get("av_status") == "active" or (d["av"] is None and o.get("av_status")):
+            d["av"] = o["av_status"]
         d["managed"] = d["managed"] or bool(o.get("managed"))
         if o.get("last_seen") and (d["last_seen"] is None or o["last_seen"] > d["last_seen"]):
             d["last_seen"] = o["last_seen"]

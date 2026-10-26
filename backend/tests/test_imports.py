@@ -26,7 +26,9 @@ def test_vendor_headers_are_recognised_as_aliases() -> None:
 def test_semicolon_rmm_export_and_av_state() -> None:
     v = validate("rmm_inventory", RMM)
     assert v.accepted and v.rows_ok == 2
-    assert v.devices[1]["edr_status"] == "inactive" and v.devices[1]["managed"] is True
+    # AV status is antivirus, not EDR: it is kept apart and never sets EDR coverage.
+    assert v.devices[1]["av_status"] == "inactive" and v.devices[1]["edr_status"] is None
+    assert v.devices[1]["managed"] is True
 
 
 def test_missing_required_column_rejects_the_file() -> None:
@@ -115,6 +117,20 @@ def test_reconcile_matches_by_serial_then_hostname_and_keeps_unmatched() -> None
     by = {d["hostname"]: d for d in devs}
     assert by["CLERK-FRONT-01"]["matched"] and by["SCANNER-PC"]["matched"] and not by["ORPHAN-1"]["matched"]
     assert edr_coverage(devs) == {"devices": 3, "covered": 1, "uncovered": 2}
+
+
+def test_rmm_av_protected_does_not_count_as_edr() -> None:
+    edr = validate(
+        "edr_hosts", "Hostname,Agent ID,Sensor Version,Status,Last Seen,Serial Number\nPC1,a1,7,Offline,2026-09-01,S1\n"
+    )
+    rmm = validate("rmm_inventory", RMM.replace("SN001", "S1").replace("CLERK-FRONT-01", "PC1"))
+    obs = [{**d, "source": "import:edr_hosts"} for d in edr.devices] + [
+        {**d, "source": "import:rmm_inventory"} for d in rmm.devices
+    ]
+    devs = {d["hostname"]: d for d in reconcile(obs)}
+    assert devs["PC1"]["edr"] == "inactive" and devs["PC1"]["av"] == "active"
+    assert devs["SCANNER-PC"]["edr"] == "none"
+    assert edr_coverage(list(devs.values()))["covered"] == 0
 
 
 def test_template_download_has_required_columns() -> None:

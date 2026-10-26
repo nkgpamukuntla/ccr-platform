@@ -1,0 +1,20 @@
+Asset Tag,Computer Name,Serial No,Location,Device Role,Make/Model,Operating System
+LCA-1001,CLERK-FRONT-01,5CG3201A01,LAB-A1,Clerk front counter,HP EliteDesk 800 G6,Windows 11
+LCA-1002,CLERK-FRONT-02,5CG3201A02,LAB-A1,Clerk front counter,HP EliteDesk 800 G6,Windows 11
+LCA-1003,CLERK-FRONT-03,5CG3201A03,LAB-A1,Clerk front counter,HP EliteDesk 800 G6,Windows 11
+LCA-1004,CLERK-BACK-01,5CG3201B01,LAB-A1,Clerk back office,HP EliteBook 840 G8,Windows 11
+LCA-1005,CLERK-BACK-02,5CG3201B02,LAB-A1,Clerk back office,HP EliteBook 840 G8,Windows 11
+LCA-1006,CLERK-BACK-03,5CG3201B03,LAB-A1,Clerk back office,HP EliteBook 840 G8,Windows 11
+LCA-1007,JUDGE-CHAMB-01,PF3KX101,LAB-A1,Judge chambers,Lenovo ThinkPad T14,Windows 11
+LCA-1008,JUDGE-CHAMB-02,PF3KX102,LAB-A1,Judge chambers,Lenovo ThinkPad T14,Windows 11
+LCA-1009,COURTRM-A-BENCH,PF3KX201,LAB-A1,Courtroom bench,Lenovo ThinkCentre M70q,Windows 11
+LCA-1010,COURTRM-B-BENCH,PF3KX202,LAB-A1,Courtroom bench,Lenovo ThinkCentre M70q,Windows 11
+LCA-1011,EFILE-REVIEW-01,5CG3201C01,LAB-A1,E-filing review,HP EliteDesk 800 G6,Windows 11
+LCA-1012,EFILE-REVIEW-02,5CG3201C02,LAB-A1,E-filing review,HP EliteDesk 800 G6,Windows 11
+LCA-1013,CASHIER-01,5CG3201D01,LAB-A1,Cashier,HP EliteDesk 800 G6,Windows 11
+LCA-1014,PUBLIC-KIOSK-1,MXL9900K1,LAB-A1,Public kiosk,HP ProOne 440,Windows 11
+LCA-1015,PUBLIC-KIOSK-2,MXL9900K2,LAB-A1,Public kiosk,HP ProOne 440,Windows 11
+LCA-1016,SCANNER-PC,MXL9900S1,LAB-A1,Document scanning,HP ProDesk 400,Windows 11
+LCA-1017,IT-ADMIN-01,PF3KX301,LAB-A1,IT administration,Lenovo ThinkPad T14,Windows 11
+LCA-1018,RECORDS-ARCH-01,5CG3201E01,LAB-A1,Records archive,HP EliteDesk 800 G6,Windows 11
+LCA-1099,,,LAB-A1,Spare,HP EliteDesk 800 G6,

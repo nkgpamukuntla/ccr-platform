@@ -6,7 +6,7 @@ type Template = { key: string; label: string; source: string; required: string[]
 type Issue = { row: number | null; level: "error" | "warning"; message: string };
 type Preview = { accepted: boolean; rows_total: number; rows_ok: number; rows_rejected: number; columns: Record<string, string>; issues: Issue[] };
 type ImportRow = { id: string; template: string; filename: string; uploaded_by: string; uploaded_at: string; rows_loaded: number; rows_rejected: number; export_date: string | null };
-type Device = { hostname: string | null; serial: string | null; os: string | null; sources: string[]; edr: string; managed: boolean; matched: boolean; site: string | null; last_seen: string | null };
+type Device = { hostname: string | null; serial: string | null; os: string | null; sources: string[]; edr: string; av: string | null; managed: boolean; matched: boolean; site: string | null; last_seen: string | null };
 type Register = { coverage: { devices: number; covered: number; uncovered: number }; matched: number; unmatched: number; devices: Device[] };
 
 /** Step 5: upload a console export, see the validation, then accept it. Nothing is stored until Accept. */
@@ -126,12 +126,13 @@ export default function Devices() {
         </select>
       </div>
       <table>
-        <thead><tr><th>Hostname</th><th>Serial</th><th>OS</th><th>EDR</th><th>Sources</th><th>Last seen</th></tr></thead>
+        <thead><tr><th>Hostname</th><th>Serial</th><th>OS</th><th>EDR</th><th>Antivirus</th><th>Sources</th><th>Last seen</th></tr></thead>
         <tbody>
           {rows.map((d, i) => (
             <tr key={i}>
               <td>{d.hostname ?? "—"}</td><td>{d.serial ?? "—"}</td><td>{d.os ?? "—"}</td>
               <td><span className={`pill ${d.edr === "active" ? "pass" : "fail"}`}>{d.edr}</span></td>
+              <td className="muted">{d.av ?? "—"}</td>
               <td className="muted">{d.sources.map((s) => s.replace("import:", "")).join(", ")}</td>
               <td className="muted">{d.last_seen ? new Date(d.last_seen).toLocaleDateString() : "—"}</td>
             </tr>
