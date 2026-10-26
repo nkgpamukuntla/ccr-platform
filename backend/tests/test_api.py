@@ -453,3 +453,72 @@ def test_import_flow_and_device_register(client: Any) -> None:
     assert d["matched"] == 1 and d["unmatched"] == 3
     actions = [a["action"] for a in client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()]
     assert actions.count("import.load") == 2
+
+
+def test_collector_download_upload_and_revoke(client: Any) -> None:
+    import io
+    import json
+    import zipfile
+
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+    from app.collector import bundle
+    from app.config import get_settings
+    from app.routers import collector
+    from tests.test_collector import ARN, KEY, facts, unwrap, wrap
+
+    oid = client.post(
+        "/api/offices", headers=ADMIN, json={"name": "Collector office", "office_type": "County IT", "county": "Lab E"}
+    ).json()["id"]
+    assert client.get(f"/api/offices/{oid}/collector/download", headers=ADMIN).status_code == 409  # no key yet
+
+    s = get_settings()
+    der = KEY.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    with (
+        mock.patch.dict(s.ec_collector_keys, {oid: ARN}),
+        mock.patch.object(s, "collector_dir", str(Path(__file__).resolve().parents[2] / "collector")),
+        mock.patch.object(collector, "kms_public_key", lambda arn: der),
+        mock.patch.object(collector, "kms_unwrap", lambda arn, ek: unwrap(ek)),
+    ):
+        r = client.get(f"/api/offices/{oid}/collector/download", headers=ADMIN)
+        assert r.status_code == 200
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        assert {"Collect-CCREvidence.ps1", "office.json", "README.txt"} <= set(z.namelist())
+        cfg = json.loads(z.read("office.json"))
+        assert cfg["office_id"] == oid and cfg["key_arn"] == ARN and cfg["token"]
+
+        def make(token: str, host: str = "kiosk-9", office: str = oid) -> bytes:
+            f = facts()
+            f["collector"]["token"] = token
+            f["device"]["hostname"] = host
+            f["device"]["serial"] = host + "-sn"
+            return bundle.seal(f, office, ARN, wrap, os.urandom(64), os.urandom(16))
+
+        good = make(cfg["token"])
+        up = client.post(f"/api/offices/{oid}/collector/bundles?filename=KIOSK-9.ccre", headers=ADMIN, content=good)
+        assert up.status_code == 201 and up.json()["edr_status"] == "active" and up.json()["hostname"] == "KIOSK-9"
+        again = client.post(f"/api/offices/{oid}/collector/bundles?filename=x.ccre", headers=ADMIN, content=good)
+        assert again.status_code == 409
+        forged = client.post(f"/api/offices/{oid}/collector/bundles?filename=x.ccre", headers=ADMIN, content=make("never-issued"))
+        assert forged.status_code == 422 and "never downloaded" in forged.json()["detail"]
+        elsewhere = client.post(
+            f"/api/offices/{oid}/collector/bundles?filename=x.ccre", headers=ADMIN, content=make(cfg["token"], office="other")
+        )
+        assert elsewhere.status_code == 422 and "different office" in elsewhere.json()["detail"]
+        stranger = client.post(f"/api/offices/{oid}/collector/bundles?filename=x.ccre", headers=OTHER, content=good)
+        assert stranger.status_code in (403, 404)
+
+        assert client.post(f"/api/offices/{oid}/collector/downloads/{cfg['token']}/revoke", headers=ADMIN).status_code == 200
+        late = client.post(
+            f"/api/offices/{oid}/collector/bundles?filename=y.ccre", headers=ADMIN, content=make(cfg["token"], "pc-2")
+        )
+        assert late.status_code == 422 and "revoked" in late.json()["detail"]
+
+        st = client.get(f"/api/offices/{oid}/collector/status", headers=ADMIN).json()
+        assert st["enabled"] and st["downloads"][0]["bundles"] == 1 and st["downloads"][0]["revoked_at"]
+        assert [b["hostname"] for b in st["bundles"]] == ["KIOSK-9"]
+        dev = client.get(f"/api/offices/{oid}/devices", headers=ADMIN).json()
+        assert dev["coverage"] == {"devices": 1, "covered": 1, "uncovered": 0}
+        assert dev["devices"][0]["sources"] == ["collector"] and dev["devices"][0]["collected"]["device"]["hostname"] == "kiosk-9"
+    actions = [a["action"] for a in client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()]
+    assert {"collector.download", "collector.bundle", "collector.revoke"} <= set(actions)

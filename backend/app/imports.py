@@ -316,6 +316,7 @@ def reconcile(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "sources": [],
                 "edr": "none",
                 "av": None,
+                "collected": None,
                 "managed": False,
                 "last_seen": None,
                 "site": None,
@@ -332,6 +333,8 @@ def reconcile(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if o.get("av_status") == "active" or (d["av"] is None and o.get("av_status")):
             d["av"] = o["av_status"]
         d["managed"] = d["managed"] or bool(o.get("managed"))
+        if o.get("collected"):
+            d["collected"] = o["collected"]  # latest collector bundle's facts for this device
         if o.get("last_seen") and (d["last_seen"] is None or o["last_seen"] > d["last_seen"]):
             d["last_seen"] = o["last_seen"]
         if d["serial"]:

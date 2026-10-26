@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     ec_fingerprint_key_id: str = ""  # KMS HMAC key ARN
     ec_raw_bucket: str = ""
     ec_raw_keys: dict[str, str] = {}  # collector tenant id (office id) -> raw key ARN, JSON in env
+    # Offline collector (Phase 3b): office id -> KMS RSA-3072 key ARN (JSON in env), and where the
+    # signed script and its certificate sit in the image.
+    ec_collector_keys: dict[str, str] = {}
+    collector_dir: str = "collector"
     ec_heartbeat_namespace: str = "EvidenceCollector"
     ec_heartbeat_metric: str = "CollectionHeartbeat"
 

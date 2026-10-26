@@ -17,11 +17,18 @@ from app.microsoft.signer import Signer
 SHA256_RSA = {"algorithm": "sha256_rsa"}
 
 
-def build_certificate(signer: Signer, common_name: str, days: int, now: datetime | None = None) -> bytes:
-    """Returns the DER certificate."""
+def build_certificate(
+    signer: Signer,
+    common_name: str,
+    days: int,
+    now: datetime | None = None,
+    organization: str = "Evidence Collector",
+    code_signing: bool = False,
+) -> bytes:
+    """Returns the DER certificate. code_signing adds the Code Signing EKU (Authenticode)."""
     now = (now or datetime.now(UTC)).replace(microsecond=0)
     public_key = keys.PublicKeyInfo.load(signer.public_key_der())
-    name = x509.Name.build({"common_name": common_name, "organization_name": "Evidence Collector"})
+    name = x509.Name.build({"common_name": common_name, "organization_name": organization})
     tbs = x509.TbsCertificate(
         {
             "version": "v3",
@@ -37,6 +44,7 @@ def build_certificate(signer: Signer, common_name: str, days: int, now: datetime
             "extensions": [
                 {"extn_id": "basic_constraints", "critical": True, "extn_value": {"ca": False}},
                 {"extn_id": "key_usage", "critical": True, "extn_value": {"digital_signature"}},
+                *([{"extn_id": "extended_key_usage", "critical": False, "extn_value": ["code_signing"]}] if code_signing else []),
                 {
                     "extn_id": "key_identifier",
                     "critical": False,

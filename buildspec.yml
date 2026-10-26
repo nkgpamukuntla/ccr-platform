@@ -6,6 +6,9 @@ env:
   shell: bash
 
 phases:
+  install:
+    runtime-versions:
+      java: corretto21 # jsign, the collector's Authenticode signer
   pre_build:
     commands:
       - test -n "$IMAGE_TAG" && test -n "$ECR_REPOSITORY_URL"
@@ -16,6 +19,7 @@ phases:
         fi
   build:
     commands:
+      - if [ -z "$SKIP" ]; then bash scripts/sign-collector.sh; fi
       - if [ -z "$SKIP" ]; then docker build --platform linux/arm64 -t "$ECR_REPOSITORY_URL:$IMAGE_TAG" .; fi
   post_build:
     commands:

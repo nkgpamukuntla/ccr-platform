@@ -44,6 +44,7 @@ ignore = ["S101"]
 "app/scuba/aad.py" = ["E501"]
 # SQL statements are kept on one line each so they read as one statement.
 "app/routers/imports.py" = ["E501"]
+"app/routers/collector.py" = ["E501"]
 
 [tool.mypy]
 strict = true

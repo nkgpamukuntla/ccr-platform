@@ -32,6 +32,9 @@ COPY --from=backend --chown=app:app /app /app
 COPY --from=frontend --chown=app:app /src/dist /app/static
 # RDS CA bundle for PGSSLMODE=verify-full (PGSSLROOTCERT is set by the task definition).
 ADD --chown=app:app https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
+# Offline collector, Authenticode-signed by scripts/sign-collector.sh just before this build.
+# Last, so the pre-sign build in that script shares every layer above.
+COPY --chown=app:app collector /app/collector
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 USER 10001
 EXPOSE 8000

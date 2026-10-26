@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import { CollectedFacts, CollectorCard } from "./Collector";
 
 type Template = { key: string; label: string; source: string; required: string[]; one_of: string[]; optional: string[] };
 type Issue = { row: number | null; level: "error" | "warning"; message: string };
 type Preview = { accepted: boolean; rows_total: number; rows_ok: number; rows_rejected: number; columns: Record<string, string>; issues: Issue[] };
 type ImportRow = { id: string; template: string; filename: string; uploaded_by: string; uploaded_at: string; rows_loaded: number; rows_rejected: number; export_date: string | null };
-type Device = { hostname: string | null; serial: string | null; os: string | null; sources: string[]; edr: string; av: string | null; managed: boolean; matched: boolean; site: string | null; last_seen: string | null };
+type Device = { hostname: string | null; serial: string | null; os: string | null; sources: string[]; edr: string; av: string | null; managed: boolean; matched: boolean; collected: Record<string, never> | null; site: string | null; last_seen: string | null };
 type Register = { coverage: { devices: number; covered: number; uncovered: number }; matched: number; unmatched: number; devices: Device[] };
 
 /** Step 5: upload a console export, see the validation, then accept it. Nothing is stored until Accept. */
@@ -101,6 +102,7 @@ export default function Devices() {
   const [reg, setReg] = useState<Register | null>(null);
   const [imports, setImports] = useState<ImportRow[]>([]);
   const [only, setOnly] = useState("all");
+  const [open, setOpen] = useState<number | null>(null);
   const load = () => {
     api<Register>(`/api/offices/${officeId}/devices`).then(setReg);
     api<ImportRow[]>(`/api/offices/${officeId}/imports`).then(setImports);
@@ -111,7 +113,7 @@ export default function Devices() {
   return (
     <>
       <h1>Devices</h1>
-      <p className="lead">Devices matched across sources (serial first, then hostname). Unmatched devices are listed, never dropped. <Link to="/offices">Back to offices</Link></p>
+      <p className="lead">Devices matched across sources (serial first, then hostname). Unmatched devices are listed, never dropped. Click a collected device (▸) to see what the collector read. <Link to="/offices">Back to offices</Link></p>
       <div className="row" style={{ marginBottom: "1rem" }}>
         <div className="card"><strong>{reg.coverage.devices}</strong><div className="muted">devices</div></div>
         <div className="card"><strong>{reg.coverage.covered} of {reg.coverage.devices}</strong><div className="muted">EDR active</div></div>
@@ -129,13 +131,18 @@ export default function Devices() {
         <thead><tr><th>Hostname</th><th>Serial</th><th>OS</th><th>EDR</th><th>Antivirus</th><th>Sources</th><th>Last seen</th></tr></thead>
         <tbody>
           {rows.map((d, i) => (
-            <tr key={i}>
-              <td>{d.hostname ?? "—"}</td><td>{d.serial ?? "—"}</td><td>{d.os ?? "—"}</td>
+            <Fragment key={i}>
+            <tr onClick={() => d.collected && setOpen(open === i ? null : i)} style={d.collected ? { cursor: "pointer" } : undefined}>
+              <td>{d.collected ? (open === i ? "▾ " : "▸ ") : ""}{d.hostname ?? "—"}</td><td>{d.serial ?? "—"}</td><td>{d.os ?? "—"}</td>
               <td><span className={`pill ${d.edr === "active" ? "pass" : "fail"}`}>{d.edr}</span></td>
               <td className="muted">{d.av ?? "—"}</td>
               <td className="muted">{d.sources.map((s) => s.replace("import:", "")).join(", ")}</td>
               <td className="muted">{d.last_seen ? new Date(d.last_seen).toLocaleDateString() : "—"}</td>
             </tr>
+            {open === i && d.collected && (
+              <tr><td colSpan={7}><CollectedFacts f={d.collected} /></td></tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -149,6 +156,7 @@ export default function Devices() {
         </tbody>
       </table>
       <div style={{ marginTop: "1.5rem" }}><CsvImport officeId={officeId} onLoaded={load} /></div>
+      <div style={{ marginTop: "1.5rem" }}><CollectorCard officeId={officeId} onLoaded={load} showHistory /></div>
     </>
   );
 }
