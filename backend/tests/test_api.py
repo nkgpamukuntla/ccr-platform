@@ -522,3 +522,87 @@ def test_collector_download_upload_and_revoke(client: Any) -> None:
         assert dev["devices"][0]["sources"] == ["collector"] and dev["devices"][0]["collected"]["device"]["hostname"] == "kiosk-9"
     actions = [a["action"] for a in client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()]
     assert {"collector.download", "collector.bundle", "collector.revoke"} <= set(actions)
+
+
+def test_workspaces_types_schedule_and_viewers(client: Any) -> None:
+    # Accountability courts are a court office type.
+    assert "Accountability Court" in client.get("/api/office-types", headers=ADMIN).json()
+    court = client.post(
+        "/api/offices",
+        headers=ADMIN,
+        json={"name": "Lab A Accountability Court", "office_type": "Accountability Court", "county": "Lab A"},
+    )
+    assert court.status_code == 201 and court.json()["time_zone"] == "America/New_York"
+
+    # A separate workspace for an organisation, outside the courts.
+    ws = client.post(
+        "/api/workspaces", headers=ADMIN, json={"name": "D-Biz Solutions", "kind": "organization", "industry": "IT services"}
+    )
+    assert ws.status_code == 201
+    wid = ws.json()["id"]
+    assert client.post("/api/workspaces", headers=AOC, json={"name": "X", "kind": "organization"}).status_code == 403
+    assert (
+        client.post("/api/workspaces", headers=ADMIN, json={"name": "d-biz solutions", "kind": "organization"}).status_code == 409
+    )
+    assert "Head office" in client.get("/api/office-types?kind=organization", headers=ADMIN).json()
+    bad = client.post(
+        "/api/offices",
+        headers=ADMIN,
+        json={"name": "D-Biz HQ", "office_type": "Sheriff", "county": "Singapore", "workspace_id": wid},
+    )
+    assert bad.status_code == 422  # court types do not belong in an organisation
+    hq = client.post(
+        "/api/offices",
+        headers=ADMIN,
+        json={
+            "name": "D-Biz HQ",
+            "office_type": "Head office",
+            "county": "Singapore",
+            "workspace_id": wid,
+            "time_zone": "Asia/Singapore",
+            "collect_at": "19:00",
+        },
+    )
+    assert hq.status_code == 201
+    hid = hq.json()["id"]
+    assert (
+        client.post(
+            "/api/offices",
+            headers=ADMIN,
+            json={"name": "Bad tz", "office_type": "Head office", "county": "X", "workspace_id": wid, "time_zone": "Mars/Base"},
+        ).status_code
+        == 422
+    )
+
+    # The AOC sees the courts, not D-Biz; a D-Biz viewer sees D-Biz only, read-only.
+    aoc_names = {o["name"] for o in client.get("/api/offices", headers=AOC).json()}
+    assert "Lab A Accountability Court" in aoc_names and "D-Biz HQ" not in aoc_names
+    assert client.get(f"/api/offices/{hid}", headers=AOC).status_code == 404
+    ciso = {"x-dev-user": "ciso@dbiz-demo.org", "x-dev-groups": ""}
+    with mock.patch("app.directory.ensure_user", return_value="invited"):
+        assert (
+            client.post(f"/api/workspaces/{wid}/viewers", headers=ADMIN, json={"email": "CISO@dbiz-demo.org"}).status_code == 201
+        )
+    rows = client.get("/api/offices", headers=ciso).json()
+    assert [o["name"] for o in rows] == ["D-Biz HQ"] and rows[0]["workspace"] == "D-Biz Solutions" and rows[0]["next_scan"]
+    assert (
+        client.put(f"/api/offices/{hid}/schedule", headers=ciso, json={"time_zone": "UTC", "collect_at": "17:00"}).status_code
+        == 403
+    )
+    assert client.get(f"/api/workspaces/{wid}/summary", headers=ciso).json()["totals"]["offices"] == 1
+    assert client.get(f"/api/workspaces/{wid}/summary", headers=AOC).status_code == 403
+    assert [w["name"] for w in client.get("/api/workspaces", headers=ciso).json()] == ["D-Biz Solutions"]
+
+    # The office's own schedule can be changed by its administrators.
+    r = client.put(f"/api/offices/{hid}/schedule", headers=ADMIN, json={"time_zone": "Asia/Kolkata", "collect_at": "18:30"})
+    assert r.status_code == 200
+    o = client.get(f"/api/offices/{hid}", headers=ADMIN).json()
+    assert o["time_zone"] == "Asia/Kolkata" and o["collect_at"].startswith("18:30") and o["workspace_kind"] == "organization"
+    assert (
+        client.put(
+            f"/api/offices/{hid}/schedule", headers=ADMIN, json={"time_zone": "Nowhere", "collect_at": "18:00"}
+        ).status_code
+        == 422
+    )
+    assert client.delete(f"/api/workspaces/{wid}/viewers/ciso@dbiz-demo.org", headers=ADMIN).status_code == 200
+    assert client.get("/api/offices", headers=ciso).json() == []

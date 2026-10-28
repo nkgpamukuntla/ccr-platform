@@ -10,6 +10,7 @@ import Posture, { PosturePicker } from "./pages/Posture";
 import OfficeMembers, { Users } from "./pages/Members";
 import Findings, { FindingsPicker } from "./pages/Findings";
 import Devices from "./pages/Devices";
+import Workspaces from "./pages/Workspaces";
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
@@ -44,7 +45,8 @@ export default function App() {
               {label}
             </NavLink>
           ))}
-          {me.is_aoc && <NavLink to="/aoc">AOC view</NavLink>}
+          {me.viewer_workspaces.some((w) => w.kind === "courts") && <NavLink to="/aoc">AOC view</NavLink>}
+          {(me.is_admin || me.viewer_workspaces.length > 0) && <NavLink to="/workspaces">Workspaces</NavLink>}
           {me.is_admin && <NavLink to="/users">Users</NavLink>}
           <div className="nav-foot">
             <div className="who">{me.email}</div>
@@ -59,6 +61,8 @@ export default function App() {
             <Route path="/offices/:officeId/onboarding/:step" element={<Wizard />} />
             <Route path="/offices/:officeId/audit" element={<Audit />} />
             <Route path="/aoc" element={<Aoc />} />
+            <Route path="/workspaces" element={<Workspaces />} />
+            <Route path="/workspaces/:workspaceId" element={<Workspaces />} />
             <Route path="/users" element={<Users />} />
             <Route path="/offices/:officeId/members" element={<OfficeMembers />} />
             <Route path="/posture" element={<PosturePicker />} />

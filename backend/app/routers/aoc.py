@@ -1,26 +1,25 @@
-"""AOC aggregate view: counts across offices, never one county's detail beyond its status."""
+"""AOC aggregate view: the courts workspace's summary (kept at its original address).
 
-from typing import Annotated, Any
+Counts across offices, never one county's detail beyond its status. See routers/workspaces.py."""
 
-from fastapi import APIRouter, Depends
+from typing import Any
 
-from app.auth import User, require_aoc
+from fastapi import APIRouter, HTTPException, status
+
+from app.access import viewer_workspaces
+from app.auth import CurrentUser
 from app.db import tx
+from app.routers import workspaces
 
 router = APIRouter(prefix="/api/aoc", tags=["aoc"])
 
 
 @router.get("/summary")
-def summary(user: Annotated[User, Depends(require_aoc)]) -> dict[str, Any]:
+def summary(user: CurrentUser) -> dict[str, Any]:
     with tx() as conn:
-        totals = conn.execute(
-            "SELECT count(*) AS offices, count(ob.live_at) AS live, "
-            "(SELECT count(*) FROM site) AS sites_in_register, "
-            "(SELECT count(DISTINCT site_id) FROM office_site) AS sites_covered "
-            "FROM office o LEFT JOIN onboarding ob ON ob.office_id = o.id"
-        ).fetchone()
-        by_profile = conn.execute(
-            "SELECT COALESCE(ep.profile, '-') AS profile, count(*) AS offices FROM office o "
-            "LEFT JOIN environment_profile ep ON ep.office_id = o.id GROUP BY 1 ORDER BY 1"
-        ).fetchall()
-    return {"totals": totals, "by_profile": by_profile}
+        viewable = viewer_workspaces(conn, user)
+        courts = conn.execute("SELECT id FROM workspace WHERE kind = 'courts' ORDER BY created_at").fetchall()
+    ids = [c["id"] for c in courts if c["id"] in viewable]
+    if not ids:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "AOC view only")
+    return workspaces.summary(ids[0], user)

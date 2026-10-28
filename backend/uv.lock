@@ -75,6 +75,7 @@ dependencies = [
     { name = "psycopg-pool" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -97,6 +98,7 @@ requires-dist = [
     { name = "psycopg-pool", specifier = "==3.2.6" },
     { name = "pydantic-settings", specifier = "==2.11.0" },
     { name = "pyjwt", extras = ["crypto"], specifier = "==2.10.1" },
+    { name = "tzdata", specifier = "==2026.5" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.37.0" },
 ]
 

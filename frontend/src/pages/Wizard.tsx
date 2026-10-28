@@ -32,7 +32,7 @@ export default function Wizard() {
     <>
       <h1>{office.name}</h1>
       <p className="lead">
-        {office.office_type} · {office.county} County {office.onboarding?.live_at && <span className="pill pass">Live</span>}
+        {office.workspace} · {office.office_type} · {office.county}{office.workspace_kind === "courts" ? " County" : ""} {office.onboarding?.live_at && <span className="pill pass">Live</span>}
       </p>
       <nav className="steps">
         {STEPS.map((label, i) => (
@@ -76,11 +76,17 @@ function Organisation({ office, next }: { office: Office; next: () => void }) {
   });
   const [sites, setSites] = useState<Site[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set(office.sites.map((s) => s.id)));
+  const [types, setTypes] = useState<string[]>([office.office_type]);
+  const [zones, setZones] = useState<string[]>([office.time_zone]);
+  const [scan, setScan] = useState({ time_zone: office.time_zone, collect_at: office.collect_at.slice(0, 5) });
   const { error, run } = useError();
+  const courts = office.workspace_kind === "courts";
 
   useEffect(() => {
-    api<Site[]>(`/api/sites?county=${encodeURIComponent(office.county)}`).then(setSites);
-  }, [office.county]);
+    if (courts) api<Site[]>(`/api/sites?county=${encodeURIComponent(office.county)}`).then(setSites);
+    api<string[]>(`/api/office-types?kind=${office.workspace_kind}`).then(setTypes);
+    api<string[]>("/api/time-zones").then((z) => setZones(z.includes(office.time_zone) ? z : [office.time_zone, ...z]));
+  }, [office.county, office.workspace_kind, office.time_zone, courts]);
 
   const toggle = (id: string) => {
     const s = new Set(picked);
@@ -88,7 +94,11 @@ function Organisation({ office, next }: { office: Office; next: () => void }) {
     setPicked(s);
   };
   const save = async () => {
-    if (await run(() => put(`/api/offices/${office.id}/organisation`, { ...form, site_ids: [...picked] }))) next();
+    if (
+      (await run(() => put(`/api/offices/${office.id}/schedule`, scan))) &&
+      (await run(() => put(`/api/offices/${office.id}/organisation`, { ...form, site_ids: [...picked] })))
+    )
+      next();
   };
 
   return (
@@ -96,10 +106,23 @@ function Organisation({ office, next }: { office: Office; next: () => void }) {
       <h2 style={{ marginTop: 0 }}>Tell us who is onboarding</h2>
       <label>Governed office</label>
       <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+      <label>Office type</label>
+      <select value={form.office_type} onChange={(e) => setForm({ ...form, office_type: e.target.value })}>
+        {types.map((t) => <option key={t}>{t}</option>)}
+      </select>
+      <label>Daily scan: time zone and end of business day</label>
+      <div className="row">
+        <select value={scan.time_zone} onChange={(e) => setScan({ ...scan, time_zone: e.target.value })} style={{ maxWidth: 280 }}>
+          {zones.map((z) => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}
+        </select>
+        <input aria-label="End of business day" type="time" value={scan.collect_at} onChange={(e) => setScan({ ...scan, collect_at: e.target.value })} style={{ maxWidth: 140 }} />
+      </div>
+      <p className="muted">Microsoft 365 is read once a day at this local time, after the working day.</p>
       <label>Authorised signatory</label>
       <input type="text" value={form.signatory_name} onChange={(e) => setForm({ ...form, signatory_name: e.target.value })} placeholder="Name and title" />
       <label>Technical contact</label>
       <input type="text" value={form.technical_contact} onChange={(e) => setForm({ ...form, technical_contact: e.target.value })} placeholder="it-lead@county.example.gov" />
+      {courts && <>
       <h2>Sites from the register</h2>
       <p className="muted">Confirm the sites this office uses.</p>
       <table>
@@ -118,6 +141,7 @@ function Organisation({ office, next }: { office: Office; next: () => void }) {
           ))}
         </tbody>
       </table>
+      </>}
       {error && <div className="error">{error}</div>}
       <div className="actions"><span /><button onClick={save}>Next: environment →</button></div>
     </div>

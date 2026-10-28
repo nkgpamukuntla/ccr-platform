@@ -14,6 +14,7 @@ dependencies = [
     "httpx==0.28.1",
     "boto3==1.40.45",
     "asn1crypto==1.5.1",
+    "tzdata==2026.5",
 ]
 
 [dependency-groups]
@@ -45,6 +46,9 @@ ignore = ["S101"]
 # SQL statements are kept on one line each so they read as one statement.
 "app/routers/imports.py" = ["E501"]
 "app/routers/collector.py" = ["E501"]
+"app/routers/offices.py" = ["E501"]
+"app/routers/workspaces.py" = ["E501"]
+"app/worker.py" = ["E501"]
 
 [tool.mypy]
 strict = true

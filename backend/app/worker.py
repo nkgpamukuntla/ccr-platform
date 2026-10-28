@@ -1,6 +1,7 @@
-"""Worker: for each office that consented, read Microsoft Graph and seal the raw bundle in S3.
+"""Worker: for each office that consented and is due, read Microsoft Graph and seal the raw bundle in S3.
 
-    python -m app.worker
+    python -m app.worker          (hourly; offices due at the end of their business day)
+    python -m app.worker --all    (every consented office, now)
 
 Runs as a scheduled ECS task in the worker subnets (the only ones with a route out, R6).
 It writes each bundle under the office's prefix with the office's own KMS key, and has no
@@ -21,7 +22,7 @@ import boto3
 import httpx
 from psycopg.types.json import Jsonb
 
-from app import db
+from app import db, schedule
 from app.config import Settings, get_settings
 from app.microsoft import graph
 from app.microsoft.signer import KmsSigner
@@ -44,13 +45,25 @@ def _fingerprint(s: Settings) -> str:
 
 
 def consented_offices() -> list[dict[str, Any]]:
+    """Offices with a granted Microsoft consent, with what the schedule needs to decide if they are due."""
     with db.tx() as conn:
         return conn.execute(
-            "SELECT DISTINCT ON (k.office_id) k.office_id, k.tenant_ref FROM consent k "
+            "SELECT DISTINCT ON (k.office_id) k.office_id, k.tenant_ref, o.time_zone, o.collect_at, "
+            "(SELECT max(r.started_at) FROM collection_run r WHERE r.office_id = k.office_id AND r.status <> 'failed') AS last_ok, "
+            "ARRAY(SELECT r.started_at FROM collection_run r WHERE r.office_id = k.office_id AND r.status = 'failed' "
+            "      AND r.started_at > now() - interval '2 days') AS recent_failures "
+            "FROM consent k JOIN office o ON o.id = k.office_id "
             "WHERE k.source = 'microsoft365' AND k.status = 'granted' AND k.tenant_ref ~ %s "
             "ORDER BY k.office_id, k.granted_at DESC",
             (UUID_RE,),
         ).fetchall()
+
+
+def due(o: dict[str, Any], now: datetime) -> bool:
+    """End of the office's business day, in its own time zone (app/schedule.py)."""
+    since = schedule.last_due(now, o["time_zone"], o["collect_at"])
+    failures = sum(1 for t in o["recent_failures"] if t >= since)
+    return schedule.is_due(now, o["time_zone"], o["collect_at"], o["last_ok"], failures)
 
 
 def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: UUID, ms_tenant: str, fingerprint: str) -> str:
@@ -133,7 +146,10 @@ def heartbeat(s: Settings) -> None:
 
 
 def main() -> int:
+    """Started every hour by EventBridge Scheduler; collects the offices that are due.
+    `python -m app.worker --all` collects every consented office now (manual run)."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    run_all = "--all" in sys.argv[1:]
     s = get_settings()
     missing = [k for k in ("ms_client_id", "ms_cert_thumbprint_sha1", "ec_signing_key_id", "ec_raw_bucket") if not getattr(s, k)]
     if missing:
@@ -145,7 +161,11 @@ def main() -> int:
         fingerprint = _fingerprint(s) if s.ec_fingerprint_key_id else ""
         results: dict[str, int] = {}
         with httpx.Client(headers={"User-Agent": "ccr-evidence-collector/1"}) as http:
+            now = datetime.now(UTC)
             for o in consented_offices():
+                if not run_all and not due(o, now):
+                    results["not_due"] = results.get("not_due", 0) + 1
+                    continue
                 if str(o["office_id"]) not in s.ec_raw_keys:
                     log.warning(
                         json.dumps(

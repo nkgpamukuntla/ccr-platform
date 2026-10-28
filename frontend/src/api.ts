@@ -32,7 +32,16 @@ export const put = <T,>(path: string, body: unknown) => api<T>(path, { method: "
 export const post = <T,>(path: string, body: unknown = {}) => api<T>(path, { method: "POST", body: JSON.stringify(body) });
 
 // ---------- types ----------
-export type Me = { email: string; groups: string[]; is_admin: boolean; is_aoc: boolean; environment: string; microsoft_configured: boolean };
+export type WorkspaceRef = { id: string; name: string; kind: "courts" | "organization" };
+export type Me = {
+  email: string;
+  groups: string[];
+  is_admin: boolean;
+  is_aoc: boolean;
+  viewer_workspaces: WorkspaceRef[];
+  environment: string;
+  microsoft_configured: boolean;
+};
 export type Site = { id: string; code: string; name: string; address: string | null; county: string; courts: string[] };
 export type OfficeRow = {
   id: string;
@@ -42,6 +51,11 @@ export type OfficeRow = {
   profile: string | null;
   completed_steps: number[];
   live_at: string | null;
+  workspace: string;
+  workspace_kind: "courts" | "organization";
+  time_zone: string;
+  collect_at: string;
+  next_scan: string;
 };
 export type Office = OfficeRow & {
   signatory_name: string | null;

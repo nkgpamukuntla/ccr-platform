@@ -15,9 +15,11 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import auth, db
-from app.auth import CurrentUser, safe_next
+from app.access import viewer_workspaces
+from app.auth import CurrentUser, User, safe_next
 from app.config import get_settings
-from app.routers import aoc, collector, findings, imports, microsoft, offices, onboarding, users
+from app.db import tx
+from app.routers import aoc, collector, findings, imports, microsoft, offices, onboarding, users, workspaces
 
 
 @asynccontextmanager
@@ -38,6 +40,7 @@ app.include_router(findings.router)
 app.include_router(imports.router)
 app.include_router(collector.router)
 app.include_router(aoc.router)
+app.include_router(workspaces.router)
 
 
 @app.middleware("http")
@@ -64,6 +67,12 @@ def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def _viewer_workspaces(user: User) -> list[dict[str, object]]:
+    with tx() as conn:
+        ids = list(viewer_workspaces(conn, user))
+        return conn.execute("SELECT id, name, kind FROM workspace WHERE id = ANY(%s) ORDER BY kind, name", (ids,)).fetchall()
+
+
 @app.get("/api/me")
 def me(user: CurrentUser) -> dict[str, object]:
     return {
@@ -71,6 +80,7 @@ def me(user: CurrentUser) -> dict[str, object]:
         "groups": user.groups,
         "is_admin": user.is_admin,
         "is_aoc": user.is_aoc,
+        "viewer_workspaces": _viewer_workspaces(user),
         "environment": get_settings().environment,
         "microsoft_configured": bool(get_settings().ms_client_id),
     }
