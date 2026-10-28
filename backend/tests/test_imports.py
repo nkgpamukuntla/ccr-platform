@@ -135,3 +135,9 @@ def test_rmm_av_protected_does_not_count_as_edr() -> None:
 
 def test_template_download_has_required_columns() -> None:
     assert template_csv("edr_hosts").startswith("Hostname,Agent Id,Agent Version,Status,Last Seen")
+
+
+def test_falcon_host_management_export_headers() -> None:
+    text = "Hostname,Host ID,Last Seen,Sensor Version,Status,Platform,Serial Number\nDBIZ-LT-01,abc123,2026-10-27T10:00:00Z,7.18.19105,Online,Windows,DX000B84\n"
+    v = validate("edr_hosts", text)
+    assert v.accepted and v.columns["agent_id"] == "Host ID" and v.devices[0]["edr_status"] == "active"
