@@ -134,7 +134,7 @@ def test_rmm_av_protected_does_not_count_as_edr() -> None:
 
 
 def test_template_download_has_required_columns() -> None:
-    assert template_csv("edr_hosts").startswith("Hostname,Agent Id,Agent Version,Status,Last Seen")
+    assert template_csv("edr_hosts").startswith("Hostname,Agent Id,Agent Version,Last Seen,Status")
 
 
 def test_falcon_host_management_export_headers() -> None:
@@ -144,3 +144,25 @@ def test_falcon_host_management_export_headers() -> None:
     )
     v = validate("edr_hosts", text)
     assert v.accepted and v.columns["agent_id"] == "Host ID" and v.devices[0]["edr_status"] == "active"
+
+
+def test_falcon_export_without_status_derives_it_from_last_seen() -> None:
+    # The real Host management export: no Status column, multi-line policy cells, Mac OS as a release name.
+    head = (
+        "Hostname,Host ID,Last Seen,First Seen,Platform,OS Version,Local IP,MAC Address,Sensor Version,Host Groups,"
+        "Last Logged In User Account,Criticality,Prevention Policy,Sensor Update Policy,Content Update Policy,"
+        "Host Retention Policy\n"
+    )
+    p4 = ",".join(['"ActiveWin\n23 Sep 26 12:55 UTC"'] * 4)
+    rows = [
+        f"PC-1,h1,2026-11-02T05:10:51Z,2026-06-19T07:32:34Z,Windows,Windows 11,10.0.0.1,aa,7.30,,u1,unassigned,{p4}",
+        f"MAC-1,h2,2026-10-28T05:00:00Z,2026-06-19T07:32:34Z,Mac,Tahoe (26),10.0.0.2,bb,7.29,,u2,unassigned,{p4}",
+        f"PC-2,h3,2026-10-20T09:00:00Z,2026-06-19T07:32:34Z,Windows,Windows 11,10.0.0.3,cc,7.28,,u3,unassigned,{p4}",
+    ]
+    v = validate("edr_hosts", head + "\n".join(rows) + "\n")
+    assert v.accepted and v.rows_ok == 3 and v.rows_rejected == 0
+    assert v.columns["os"] == "OS Version" and v.columns["platform"] == "Platform"
+    assert [d["edr_status"] for d in v.devices] == ["active", "active", "inactive"]  # PC-2: 13 days stale
+    assert v.devices[1]["os"] == "Mac Tahoe (26)"
+    assert not [i for i in v.issues if "unrecognised OS" in i.message]
+    assert "derived from Last Seen" in v.issues[0].message

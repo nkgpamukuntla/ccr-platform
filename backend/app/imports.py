@@ -11,7 +11,7 @@ import io
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel
@@ -29,12 +29,13 @@ class Template:
 
 
 # Canonical columns: hostname, serial, mac, os, os_build, last_seen, edr_product, edr_status,
-# agent_id, agent_version, managed, compliance, last_patch, av_state, model, site, role, entra_device_id
+# agent_id, agent_version, managed, compliance, last_patch, av_state, model, site, role, entra_device_id, platform
 ALIASES: dict[str, tuple[str, ...]] = {
     "hostname": ("hostname", "host name", "device name", "devicename", "computer name", "computername", "name", "machine name"),
     "serial": ("serial", "serial number", "serialnumber", "serial no", "system serial number"),
     "mac": ("mac", "mac address", "macaddress", "local ip mac"),
-    "os": ("os", "operating system", "os version", "platform", "os name"),
+    "os": ("os", "operating system", "os version", "os name"),
+    "platform": ("platform", "platform name"),
     "os_build": ("os build", "osbuild", "build", "os build number", "kernel version"),
     "last_seen": ("last seen", "lastseen", "last check-in", "last check in", "last contact", "last sync", "last sync date time"),
     "agent_id": ("agent id", "agentid", "aid", "host id", "hostid", "sensor id", "device id", "uuid"),
@@ -58,8 +59,9 @@ TEMPLATES: dict[str, Template] = {
             "edr_hosts",
             "EDR console host list",
             "CrowdStrike, Defender, SentinelOne, Cortex",
-            required=("hostname", "agent_id", "agent_version", "edr_status", "last_seen"),
-            optional=("serial", "mac", "os", "edr_product"),
+            # Falcon's Host management export has no status column: status is then derived from Last Seen.
+            required=("hostname", "agent_id", "agent_version", "last_seen"),
+            optional=("edr_status", "serial", "mac", "os", "edr_product"),
         ),
         Template(
             "rmm_inventory",
@@ -94,8 +96,9 @@ TEMPLATES: dict[str, Template] = {
     ]
 }
 
-KNOWN_OS = re.compile(r"windows|macos|mac os|os x|linux|ubuntu|ios|android|chrome", re.IGNORECASE)
+KNOWN_OS = re.compile(r"windows|macos|mac os|\bmac\b|os x|linux|ubuntu|ios|android|chrome", re.IGNORECASE)
 ACTIVE = {"online", "active", "normal", "healthy", "running", "protected", "enabled", "connected", "ok"}
+STALE_AFTER = timedelta(days=7)  # no status column: a sensor not seen this long before the newest check-in is inactive
 INACTIVE = {"offline", "inactive", "disabled", "unhealthy", "stopped", "degraded", "not running", "uninstalled"}
 
 
@@ -188,9 +191,9 @@ def validate(template_key: str, text: str, max_issues: int = 100) -> Validation:
     header = [norm(h) for h in rows[0]]
     columns: dict[str, int] = {}
     for canon, names in ALIASES.items():
-        for i, h in enumerate(header):
-            if h in names and canon not in columns:
-                columns[canon] = i
+        for name in names:  # alias order is preference order: "OS Version" beats "Platform" etc.
+            if name in header and canon not in columns:
+                columns[canon] = header.index(name)
     missing = [c for c in t.required if c not in columns]
     if t.one_of and not any(c in columns for c in t.one_of):
         missing.append(" or ".join(t.one_of))
@@ -232,6 +235,8 @@ def validate(template_key: str, text: str, max_issues: int = 100) -> Validation:
         else:
             seen[key] = n
         os_val = get("os")
+        if get("platform") and not os_val.lower().startswith(get("platform").lower()):
+            os_val = f"{get('platform')} {os_val}".strip()  # Falcon: "Mac" + "Tahoe (26)"
         if os_val and not KNOWN_OS.search(os_val) and len(issues) < max_issues:
             issues.append(Issue(row=n, level="warning", message=f"unrecognised OS value '{os_val}'"))
         # Only an EDR source sets EDR status. An RMM "AV status" is antivirus, kept apart as av_status
@@ -261,6 +266,20 @@ def validate(template_key: str, text: str, max_issues: int = 100) -> Validation:
                 }
                 | ({"av_status": av_status} if av_status else {}),
             }
+        )
+    if template_key == "edr_hosts" and "edr_status" not in columns and devices:
+        newest = max((d["last_seen"] for d in devices if d["last_seen"]), default=None)
+        for d in devices:
+            fresh = newest is not None and d["last_seen"] is not None and newest - d["last_seen"] <= STALE_AFTER
+            d["edr_status"] = "active" if fresh else "inactive"
+        issues.insert(
+            0,
+            Issue(
+                row=None,
+                level="warning",
+                message=f"no status column: EDR status derived from Last Seen (active if seen within "
+                f"{STALE_AFTER.days} days of the newest check-in in the file)",
+            ),
         )
     total = len([r for r in rows[1:] if any(c.strip() for c in r)])
     accepted = bool(devices) and rejected <= total * 0.2

@@ -147,9 +147,12 @@ def heartbeat(s: Settings) -> None:
 
 def main() -> int:
     """Started every hour by EventBridge Scheduler; collects the offices that are due.
-    `python -m app.worker --all` collects every consented office now (manual run)."""
+    `python -m app.worker --all` collects every consented office now (manual run);
+    `python -m app.worker --office <id>` collects that one office now."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    run_all = "--all" in sys.argv[1:]
+    args = sys.argv[1:]
+    only = args[args.index("--office") + 1] if "--office" in args[:-1] else None
+    run_all = "--all" in args or only is not None
     s = get_settings()
     missing = [k for k in ("ms_client_id", "ms_cert_thumbprint_sha1", "ec_signing_key_id", "ec_raw_bucket") if not getattr(s, k)]
     if missing:
@@ -163,6 +166,8 @@ def main() -> int:
         with httpx.Client(headers={"User-Agent": "ccr-evidence-collector/1"}) as http:
             now = datetime.now(UTC)
             for o in consented_offices():
+                if only and str(o["office_id"]) != only:
+                    continue
                 if not run_all and not due(o, now):
                     results["not_due"] = results.get("not_due", 0) + 1
                     continue
