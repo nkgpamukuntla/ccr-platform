@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { CollectedFacts, CollectorCard } from "./Collector";
+import EntraDevices from "./EntraDevices";
 import Export from "./Export";
 
 type Template = { key: string; label: string; source: string; required: string[]; one_of: string[]; optional: string[] };
@@ -111,23 +112,46 @@ export default function Devices() {
   useEffect(load, [officeId]);
   if (!reg) return <div className="muted">Loading…</div>;
   const rows = reg.devices.filter((d) => only === "all" || (only === "uncovered" ? d.edr !== "active" : !d.matched));
+  const stale = reg.devices.filter((d) => d.edr === "inactive").length;
+  const none = reg.devices.filter((d) => d.edr === "none").length;
+  const win10 = reg.devices.filter((d) => (d.os ?? "").toLowerCase().includes("windows 10")).length;
   return (
     <>
       <div className="row" style={{ justifyContent: "space-between" }}>
         <h1>Devices</h1>
         <Export officeId={officeId} what="devices" />
       </div>
-      <p className="lead">Devices matched across sources (serial first, then hostname). Unmatched devices are listed, never dropped. Click a collected device (▸) to see what the collector read. <Link to="/offices">Back to offices</Link></p>
-      <div className="row" style={{ marginBottom: "1rem" }}>
-        <div className="card"><strong>{reg.coverage.devices}</strong><div className="muted">devices</div></div>
-        <div className="card"><strong>{reg.coverage.covered} of {reg.coverage.devices}</strong><div className="muted">EDR active</div></div>
-        <div className="card"><strong>{reg.matched}</strong><div className="muted">matched across sources</div></div>
-        <div className="card"><strong>{reg.unmatched}</strong><div className="muted">seen in one source only</div></div>
-      </div>
+      <p className="lead">
+        Every computer we know about, from your EDR console export, RMM export and the collector, matched by serial number and then name.
+        <Link to="/offices"> Back to offices</Link>
+      </p>
+      {reg.coverage.devices > 0 ? (
+        <>
+          <div className={`banner ${reg.coverage.uncovered ? "bad" : "good"}`}>
+            <strong>
+              {reg.coverage.uncovered
+                ? `${reg.coverage.covered} of ${reg.coverage.devices} computers (${Math.round((100 * reg.coverage.covered) / reg.coverage.devices)}%) have an active EDR agent; ${reg.coverage.uncovered} need attention.`
+                : `All ${reg.coverage.devices} computers have an active EDR agent.`}
+            </strong>
+          </div>
+          <div className="stats">
+            <div className="stat"><div className="n">{reg.coverage.devices}</div><div className="l">computers in the register</div></div>
+            <div className="stat good"><div className="n">{reg.coverage.covered}</div><div className="l">EDR active</div></div>
+            <div className="stat warn"><div className="n">{stale}</div><div className="l">EDR stopped reporting (over 7 days)</div></div>
+            <div className="stat bad"><div className="n">{none}</div><div className="l">no EDR agent</div></div>
+            <div className="stat warn"><div className="n">{win10}</div><div className="l">on Windows 10 (no more security fixes)</div></div>
+            <div className="stat quiet"><div className="n">{reg.unmatched}</div><div className="l">seen in one source only</div></div>
+          </div>
+        </>
+      ) : (
+        <div className="banner warn">No devices yet. Upload your EDR console export (CrowdStrike Host management CSV) below to fill this page.</div>
+      )}
+      <EntraDevices officeId={officeId} />
+      <h2>All computers</h2>
       <div className="row" style={{ marginBottom: "0.75rem" }}>
         <select value={only} onChange={(e) => setOnly(e.target.value)} style={{ maxWidth: 260 }}>
           <option value="all">All devices</option>
-          <option value="uncovered">No active EDR agent</option>
+          <option value="uncovered">Needs attention (no EDR or stopped reporting)</option>
           <option value="unmatched">Seen in one source only</option>
         </select>
       </div>
@@ -138,7 +162,7 @@ export default function Devices() {
             <Fragment key={i}>
             <tr onClick={() => d.collected && setOpen(open === i ? null : i)} style={d.collected ? { cursor: "pointer" } : undefined}>
               <td>{d.collected ? (open === i ? "▾ " : "▸ ") : ""}{d.hostname ?? "—"}</td><td>{d.serial ?? "—"}</td><td>{d.os ?? "—"}</td>
-              <td><span className={`pill ${d.edr === "active" ? "pass" : "fail"}`}>{d.edr}</span></td>
+              <td><span className={`pill ${d.edr === "active" ? "pass" : d.edr === "inactive" ? "warn" : "fail"}`}>{d.edr === "active" ? "Active" : d.edr === "inactive" ? "Stopped reporting" : "None"}</span></td>
               <td className="muted">{d.av ?? "—"}</td>
               <td className="muted">{d.sources.map((s) => s.replace("import:", "")).join(", ")}</td>
               <td className="muted">{d.last_seen ? new Date(d.last_seen).toLocaleDateString() : "—"}</td>

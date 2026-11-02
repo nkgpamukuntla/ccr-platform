@@ -54,6 +54,7 @@ ignore = ["S101"]
 "app/notify.py" = ["E501"]
 "app/remediation.py" = ["E501"]
 "app/findings_engine.py" = ["E501"]
+"app/plain.py" = ["E501"]
 
 [tool.mypy]
 strict = true

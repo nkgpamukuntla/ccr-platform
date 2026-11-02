@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import boto3
 
-from app import findings_engine, remediation
+from app import findings_engine, plain, remediation
 from app.config import get_settings
 from app.routers.imports import office_devices
 
@@ -113,7 +113,10 @@ def diff(prev: list[dict[str, Any]] | None, cur: list[dict[str, Any]]) -> dict[s
     return {
         "new": [c[k] for k in c if k not in p],
         "resolved": [p[k] for k in p if k not in c],
-        "changed": [(p[k], c[k]) for k in c if k in p and p[k]["title"] != c[k]["title"]],
+        # Snapshots from before plain wording ("plain" absent) only differ in words, not in substance.
+        "changed": [
+            (p[k], c[k]) for k in c if k in p and p[k]["title"] != c[k]["title"] and p[k].get("plain") == c[k].get("plain")
+        ],
     }
 
 
@@ -159,7 +162,7 @@ def render_report(
         if ph.get("devices"):
             line += f"; previous scan {ph['devices']} devices, {ph['edr_active']} active"
         body += ["", line]
-    sev = ", ".join(f"{k} {v}" for k, v in sorted(head["by_severity"].items()))
+    sev = ", ".join(f"{v} {plain.SEVERITY.get(k, k).lower()}" for k, v in sorted(head["by_severity"].items()))
     body += ["", f"Findings: {head['findings']}" + (f" ({sev})" if sev else "")]
     if prev is None:
         body.append("This is the first reported scan; later emails list what changed.")
@@ -167,7 +170,7 @@ def render_report(
         since = prev["taken_at"].astimezone(tz)
         body += ["", f"Changes since the previous scan ({since:%d %b %Y %H:%M}):"]
         block = (
-            _lines("New", [f"[{f['severity']}] {f['title']}" for f in changes["new"]])
+            _lines("New", [f"[{plain.SEVERITY.get(f['severity'], f['severity'])}] {f['title']}" for f in changes["new"]])
             + _lines("Resolved", [f["title"] for f in changes["resolved"]])
             + _lines("Changed", [f"{a['title']}  ->  {b['title']}" for a, b in changes["changed"]])
         )
@@ -191,7 +194,7 @@ def report_run(conn: Any, run: dict[str, Any]) -> int:
         (run["office_id"],),
     ).fetchone()
     findings = findings_engine.build(conn, office["id"])
-    cur = [{"key": f.key, "title": f.title, "severity": f.severity} for f in findings]
+    cur = [{"key": f.key, "title": f.title, "severity": f.severity, "plain": True} for f in findings]
     head = headline(conn, office["id"], run["id"], findings)
     prev = conn.execute(
         "SELECT taken_at, headline, findings FROM finding_snapshot WHERE office_id = %s ORDER BY taken_at DESC LIMIT 1",

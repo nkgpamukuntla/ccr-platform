@@ -16,6 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app import plain
 from app.routers.imports import office_devices
 from app.routers.microsoft import _edr_from_devices
 
@@ -44,6 +45,8 @@ class Finding(BaseModel):
     recommendation: str
     as_of: datetime | None
     evidence: dict[str, Any]
+    why: str = ""  # why it matters, in plain words
+    technical: str = ""  # the official wording, shown on request
 
 
 def _source_label(sources: set[str]) -> str:
@@ -79,10 +82,14 @@ def build(conn: Any, office_id: UUID) -> list[Finding]:
                 continue  # EDR is reported per device issue below
             if c["state"] not in SEVERITY:
                 continue
+            words = plain.control(c["control"], c["state"])
+            title = _control_title(c)
             out.append(
                 Finding(
                     key=f"control:{c['control']}",
-                    title=_control_title(c),
+                    title=title if title[0].isdigit() or not words else words[0],
+                    why=words[1] if words else "",
+                    technical=f"Control {c['control']} ({c['name']}): {c['state']}. {plain.answer(c)}".strip(),
                     area="Identity",
                     control=c["control"],
                     severity=SEVERITY[c["state"]],
@@ -109,15 +116,18 @@ def build(conn: Any, office_id: UUID) -> list[Finding]:
             (a["id"], fresh),
         ).fetchall():
             req = (r["requirement"] or r["policy_id"]).strip()
+            sw = plain.scuba(r["policy_id"])
             out.append(
                 Finding(
                     key=f"scuba:{r['policy_id']}",
-                    title=f"{r['policy_id']}: {req[:140]}",
+                    title=sw[0] if sw else f"{r['policy_id']}: {req[:140]}",
+                    why=sw[1] if sw else "",
+                    technical=f"CISA SCuBA {r['policy_id']}: {req}",
                     area="Identity" if r["product"].lower() == "aad" else r["product"].upper(),
                     control=None,
                     severity="High",
                     source="Connected · SCuBA" if a["source"] == "collected" else "Imported · ScubaGear report",
-                    recommendation=req,
+                    recommendation=sw[2] if sw else req,
                     as_of=a["assessed_at"],
                     evidence={"details": r["details"][:500]},
                 )
@@ -142,6 +152,7 @@ def build(conn: Any, office_id: UUID) -> list[Finding]:
                         severity=severity,
                         source=src,
                         recommendation=rec,
+                        why=plain.DEVICE.get(key, ""),
                         as_of=newest["at"],
                         evidence={"devices": len(hit), "of": len(devs), "sample": names[:25]},
                     )

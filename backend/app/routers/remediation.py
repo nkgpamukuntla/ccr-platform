@@ -11,7 +11,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from app import audit, entra_devices, exports, findings_engine, notify, remediation
+from app import audit, entra_devices, exports, findings_engine, notify, plain, remediation
 from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.config import get_settings
@@ -179,7 +179,7 @@ def _evidence_text(c: dict[str, Any]) -> str:
             f"{d['admins']} admins; {len(d.get('not_registered', []))} without MFA, "
             f"{len(d.get('phone_only', []))} phone-only, {d.get('phishing_resistant', 0)} phishing-resistant"
         )
-    return str(d.get("note") or d.get("reason") or d.get("summary") or c["method"])
+    return plain.answer(c) or str(d.get("note") or d.get("reason") or d.get("summary") or c["method"])
 
 
 def _pack(conn: Any, office_id: UUID, destination: str, user_email: str) -> dict[str, Any]:
@@ -227,7 +227,13 @@ def _pack(conn: Any, office_id: UUID, destination: str, user_email: str) -> dict
         "generated_at": datetime.now(UTC),
         "generated_by": user_email,
         "controls": controls,
-        "findings": [{k: r[k] for k in ("key", "title", "area", "severity", "source", "recommendation", "as_of")} for r in reg],
+        "findings": [
+            {
+                k: r[k]
+                for k in ("key", "title", "area", "severity", "source", "recommendation", "as_of", "why", "technical", "evidence")
+            }
+            for r in reg
+        ],
         "remediation": {
             "open": sum(1 for i in its if i["status"] != "closed"),
             "overdue": sum(1 for i in its if remediation.overdue(i, today)),
@@ -264,11 +270,13 @@ def _sheets(
         return {
             "Findings": (
                 [
-                    "Severity",
+                    "Priority",
                     "Area",
                     "Control",
                     "Finding",
-                    "Recommendation",
+                    "Why it matters",
+                    "What to do",
+                    "Technical reference",
                     "Source",
                     "As of",
                     "Tracked",
@@ -278,11 +286,13 @@ def _sheets(
                 ],
                 [
                     [
-                        r["severity"],
+                        plain.SEVERITY.get(r["severity"], r["severity"]),
                         r["area"],
                         r["control"],
                         r["title"],
+                        r["why"],
                         r["recommendation"],
+                        r["technical"],
                         r["source"],
                         r["as_of"],
                         "yes" if r["item"] else "no",
@@ -431,8 +441,19 @@ def _sheets(
     return {
         "Evidence pack": controls,
         "Findings": (
-            ["Severity", "Area", "Finding", "Recommendation", "Source", "As of"],
-            [[f["severity"], f["area"], f["title"], f["recommendation"], f["source"], f["as_of"]] for f in pack["findings"]],
+            ["Priority", "Area", "Finding", "Why it matters", "What to do", "Technical reference", "As of"],
+            [
+                [
+                    plain.SEVERITY.get(f["severity"], f["severity"]),
+                    f["area"],
+                    f["title"],
+                    f["why"],
+                    f["recommendation"],
+                    f["technical"],
+                    f["as_of"],
+                ]
+                for f in pack["findings"]
+            ],
         ),
         "Remediation": (
             ["Item", "Owner", "Status", "Target date", "Closed because"],

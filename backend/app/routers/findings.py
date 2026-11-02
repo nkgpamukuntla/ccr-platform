@@ -9,7 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, status
 from psycopg.types.json import Jsonb
 
-from app import audit
+from app import audit, plain
 from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.db import tx
@@ -103,9 +103,11 @@ def findings(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
                 "WHERE assessment_id = %s AND lower(product) = %s",
                 (a["id"], product),
             ).fetchall():
+                words = plain.scuba(r["policy_id"])
                 rows.append(
                     {
                         **r,
+                        "plain": dict(zip(("title", "why", "fix"), words, strict=True)) if words else None,
                         "source": a["source"],
                         "baseline": a["baseline"],
                         "assessed_at": a["assessed_at"],

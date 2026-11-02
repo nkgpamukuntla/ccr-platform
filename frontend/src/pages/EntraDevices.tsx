@@ -65,12 +65,26 @@ export default function EntraDevices({ officeId }: { officeId: string }) {
         personal devices. It never removes one on its own, so {s.total} records is not {s.total} machines. Of them, {act.active} signed in
         within 30 days, and {s.company_computers_active} are active company computers (Windows or Mac, joined).
       </p>
+      <div className="stats">
+        <div className="stat good"><div className="n">{act.active}</div><div className="l">active (signed in within 30 days)</div></div>
+        <div className="stat"><div className="n">{s.company_computers_active}</div><div className="l">active company computers</div></div>
+        <div className="stat warn"><div className="n">{act.stale + act.never}</div><div className="l">stale or never used: clean-up candidates</div></div>
+        <div className="stat warn"><div className="n">{s.extra_records}</div><div className="l">extra records from repeated names</div></div>
+        {v.edr && (
+          <div className={`stat ${v.edr.without_edr.length ? "bad" : "good"}`}>
+            <div className="n">{v.edr.without_edr.length}</div><div className="l">active company computers not in the EDR register</div>
+          </div>
+        )}
+      </div>
+      <details>
+        <summary className="muted">Breakdown by activity, join type and operating system</summary>
       <div className="row" style={{ alignItems: "flex-start", gap: "1.5rem" }}>
         <Counts title="Activity" data={Object.fromEntries(Object.entries(ACT).map(([k, [l]]) => [l, act[k as keyof typeof act]]))} note={Object.fromEntries(Object.values(ACT))} />
         <Counts title="Join type" data={s.join!} note={JOIN_NOTE} />
         <Counts title="Operating system" data={s.os!} />
         <Counts title="Management" data={{ "Intune managed": s.managed, Compliant: s.compliant }} />
       </div>
+      </details>
 
       <h3>Company computers and the EDR register</h3>
       {v.edr ? (

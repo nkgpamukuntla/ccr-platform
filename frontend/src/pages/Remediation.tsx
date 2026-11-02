@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow, post } from "../api";
+import { FindingCard } from "../components/Plain";
 import Export from "./Export";
 
 type Item = { id: string; status: string; owner: string; target_date: string | null };
@@ -14,6 +15,8 @@ type Finding = {
   recommendation: string;
   as_of: string | null;
   evidence: Record<string, unknown>;
+  why: string;
+  technical: string;
   item: Item | null;
 };
 type Event = { at: string; actor: string; from_status: string | null; to_status: string; note: string | null };
@@ -39,7 +42,6 @@ const COLUMNS = [
   ["awaiting_evidence", "Awaiting evidence"],
   ["closed", "Closed"],
 ] as const;
-const SEV: Record<string, string> = { Mandatory: "fail", High: "warn", Medium: "" };
 const day = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
 
 export function RemediationPicker() {
@@ -226,44 +228,45 @@ export default function Remediation() {
     <>
       <h1>Findings and remediation</h1>
       <p className="lead">
-        Every gap becomes a finding with a recommendation. Track it to give it an owner and a target date. Work is done in your own tools; an
+        Each problem we found, in plain words, with what to do about it. Assign one to give it an owner and a target date. Work is done in your own tools; an
         item closes only when the next scan, import or collector run no longer shows the finding. <Link to={`/offices/${officeId}/evidence`}>Evidence pack</Link>
       </p>
       {error && <div className="error">{error}</div>}
 
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2>Findings {reg && <span className="muted">({reg.findings.length}: {Object.entries(reg.counts).map(([k, v]) => `${v} ${k}`).join(", ")})</span>}</h2>
+        <h2>What to fix {reg && <span className="muted">({reg.findings.length})</span>}</h2>
         <Export officeId={officeId} what="findings" />
       </div>
-      <table>
-        <thead><tr><th>Severity</th><th>Finding</th><th>Recommendation</th><th>Source</th><th></th></tr></thead>
-        <tbody>
-          {reg?.findings.map((f) => (
-            <tr key={f.key}>
-              <td><span className={`pill ${SEV[f.severity] ?? ""}`}>{f.severity}</span></td>
-              <td>
-                <strong>{f.title}</strong>
-                <div className="muted" style={{ fontSize: "0.85em" }}>{f.area}{f.control ? ` · control ${f.control}` : ""} · as of {day(f.as_of)}</div>
-                {Array.isArray(f.evidence.sample) && (
-                  <div className="muted" style={{ fontSize: "0.8em" }}>{(f.evidence.sample as string[]).join(", ")}{Number(f.evidence.devices) > 25 ? " …" : ""}</div>
-                )}
-              </td>
-              <td>{f.recommendation}</td>
-              <td className="muted">{f.source}</td>
-              <td>
-                {f.item ? (
-                  <span className="pill">{COLUMNS.find(([k]) => k === f.item!.status)?.[1]} · {f.item.owner}</span>
-                ) : tracking === f.key ? (
-                  <TrackForm officeId={officeId} f={f} done={() => { setTracking(""); load(); }} />
-                ) : (
-                  <button className="secondary" onClick={() => setTracking(f.key)}>Track</button>
-                )}
-              </td>
-            </tr>
-          ))}
-          {reg?.findings.length === 0 && <tr><td colSpan={5} className="muted">No findings in the current evidence.</td></tr>}
-        </tbody>
-      </table>
+      {reg && reg.findings.length > 0 && (
+        <div className="stats">
+          <div className="stat bad"><div className="n">{reg.findings.filter((f) => f.severity === "Mandatory").length}</div><div className="l">must fix</div></div>
+          <div className="stat warn"><div className="n">{reg.findings.filter((f) => f.severity === "High").length}</div><div className="l">important</div></div>
+          <div className="stat"><div className="n">{reg.findings.filter((f) => f.item).length}</div><div className="l">being worked on</div></div>
+          <div className="stat quiet"><div className="n">{reg.findings.filter((f) => !f.item).length}</div><div className="l">not yet assigned</div></div>
+        </div>
+      )}
+      <p className="muted" style={{ fontSize: "0.9em" }}>Press <strong>!</strong> on any finding for why it matters, how we know, and the technical reference for IT.</p>
+      {reg?.findings.map((f) => (
+        <FindingCard
+          key={f.key}
+          f={f}
+          side={
+            f.item ? (
+              <span className="pill">{COLUMNS.find(([k]) => k === f.item!.status)?.[1]} · {f.item.owner}</span>
+            ) : tracking === f.key ? null : (
+              <button className="secondary" onClick={() => setTracking(f.key)}>Assign</button>
+            )
+          }
+        />
+      ))}
+      {tracking && reg?.findings.find((f) => f.key === tracking) && (
+        <div className="card">
+          <strong>Assign: {reg.findings.find((f) => f.key === tracking)!.title}</strong>
+          <TrackForm officeId={officeId} f={reg.findings.find((f) => f.key === tracking)!} done={() => { setTracking(""); load(); }} />
+          <button className="secondary" style={{ marginTop: "0.4rem" }} onClick={() => setTracking("")}>Cancel</button>
+        </div>
+      )}
+      {reg?.findings.length === 0 && <div className="banner good">No findings in the current evidence.</div>}
 
       <div className="row" style={{ justifyContent: "space-between", marginTop: "1.5rem" }}>
         <h2>Remediation board</h2>

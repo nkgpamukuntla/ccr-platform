@@ -98,7 +98,7 @@ export type Connection = {
   consent_outdated: boolean;
 };
 export type Check = { check: string; result: "pass" | "warn" | "fail"; action: string };
-export type ControlRow = { control: number; name: string; state: "met" | "gap" | "weak" | "not_observed" | "pending"; method: string; detail: Record<string, unknown>; as_of: string };
+export type ControlRow = { control: number; name: string; state: "met" | "gap" | "weak" | "not_observed" | "pending"; method: string; detail: Record<string, unknown>; as_of: string; about?: string; label?: string; summary?: string };
 export type EntraSummary = {
   total: number;
   managed: number;

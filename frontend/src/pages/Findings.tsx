@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow } from "../api";
+import { InfoButton } from "../components/Plain";
 
 type Row = {
   product: string;
@@ -13,10 +14,11 @@ type Row = {
   baseline: string;
   assessed_at: string;
   imported_by: string | null;
+  plain: { title: string; why: string; fix: string } | null;
 };
 type Data = { summary: Record<string, Record<string, number>>; results: Row[] };
 
-const LABEL: Record<Row["status"], string> = { pass: "Pass", fail: "Fail", warning: "Warning", na: "N/A", error: "Error" };
+const LABEL: Record<Row["status"], string> = { pass: "OK", fail: "Must fix", warning: "Recommended", na: "Not applicable", error: "Could not check" };
 const PILL: Record<Row["status"], string> = { pass: "pass", fail: "fail", warning: "warn", na: "", error: "warn" };
 const PRODUCT: Record<string, string> = {
   AAD: "Entra ID", DEFENDER: "Defender", EXO: "Exchange Online", POWERPLATFORM: "Power Platform",
@@ -40,6 +42,39 @@ export function FindingsPicker() {
         </tbody>
       </table>
     </>
+  );
+}
+
+function PolicyCard({ r }: { r: Row }) {
+  const [open, setOpen] = useState(false);
+  const sev = r.status === "fail" ? "Mandatory" : r.status === "warning" ? "High" : "";
+  return (
+    <div className={`finding ${sev}`} style={r.status === "pass" ? { borderLeftColor: "var(--good)" } : undefined}>
+      <div className="head">
+        <span className={`pill ${PILL[r.status]}`}>{LABEL[r.status]}</span>
+        <div className="t">
+          {r.plain?.title ?? r.requirement}
+          {r.plain && r.status !== "pass" && (
+            <div className="do muted" style={{ fontWeight: 400 }}><strong style={{ color: "var(--ink)" }}>What to do:</strong> {r.plain.fix}</div>
+          )}
+        </div>
+        <InfoButton on={open} toggle={() => setOpen(!open)} />
+      </div>
+      {open && (
+        <dl className="more">
+          {r.plain && (<><dt>Why it matters</dt><dd>{r.plain.why}</dd></>)}
+          <dt>What Microsoft 365 shows</dt>
+          <dd>{r.details || "—"}</dd>
+          <dt>How we know</dt>
+          <dd>
+            {r.source === "collected" ? "Read from Microsoft 365" : "From an uploaded ScubaGear report"}, checked with CISA ScubaGear {r.baseline} rules ·{" "}
+            {new Date(r.assessed_at).toLocaleString()}{r.imported_by ? ` · by ${r.imported_by}` : ""}
+          </dd>
+          <dt>Technical reference (for IT)</dt>
+          <dd className="muted">{r.policy_id} ({r.criticality}): {r.requirement}</dd>
+        </dl>
+      )}
+    </div>
   );
 }
 
@@ -67,10 +102,10 @@ export default function Findings() {
 
   return (
     <>
-      <h1>Findings · SCuBA baselines</h1>
+      <h1>Microsoft 365 security checks</h1>
       <p className="lead">
-        Scored with CISA ScubaGear's own rules, by baseline policy. <strong>Collected</strong> = our read-only collection scored with ScubaGear's rules;{" "}
-        <strong>Imported</strong> = a ScubaGear report the office ran and uploaded (onboarding step 5). An Error means the data was not available, never a failure.
+        Your Microsoft 365 settings checked against the US government's security baseline (CISA SCuBA). "Must fix" items are required;
+        "Recommended" items are good practice. "Could not check" means the data was not available, never a failure.
       </p>
       {data.results.length === 0 ? (
         <div className="card">
@@ -80,7 +115,7 @@ export default function Findings() {
       ) : (
         <>
           <table>
-            <thead><tr><th>Product</th><th>Pass</th><th>Fail</th><th>Warning</th><th>N/A</th><th>Error</th></tr></thead>
+            <thead><tr><th>Area</th><th>OK</th><th>Must fix</th><th>Recommended</th><th>Not applicable</th><th>Could not check</th></tr></thead>
             <tbody>
               {Object.entries(data.summary).map(([p, s]) => (
                 <tr key={p}>
@@ -94,32 +129,16 @@ export default function Findings() {
             <label htmlFor="f-status" style={{ margin: 0 }}>Show</label>
             <select id="f-status" value={status} onChange={(e) => setStatus(e.target.value)} style={{ maxWidth: 220 }}>
               <option value="not-pass">Everything not passing</option>
-              <option value="fail">Fail (SHALL not met)</option>
-              <option value="warning">Warning (SHOULD not met)</option>
-              <option value="error">Error (not observed)</option>
-              <option value="pass">Pass</option>
+              <option value="fail">Must fix</option>
+              <option value="warning">Recommended</option>
+              <option value="error">Could not check</option>
+              <option value="pass">OK</option>
               <option value="all">All</option>
             </select>
             <span className="muted">{product === "all" ? "All products" : PRODUCT[product] ?? product} · {rows.length} policies</span>
           </div>
-          <table>
-            <thead><tr><th>Policy</th><th>Requirement</th><th>Result</th><th>Reading</th><th>How established</th></tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={`${r.product}-${r.policy_id}`}>
-                  <td><code>{r.policy_id}</code><div className="muted">{r.criticality}</div></td>
-                  <td>{r.requirement}</td>
-                  <td><span className={`pill ${PILL[r.status]}`}>{LABEL[r.status]}</span></td>
-                  <td className="muted" style={{ maxWidth: 320 }}>{r.details}</td>
-                  <td className="muted">
-                    {r.source === "collected" ? "Collected" : "Imported"} · ScubaGear {r.baseline}
-                    <div>{new Date(r.assessed_at).toLocaleString()}</div>
-                    {r.imported_by && <div>by {r.imported_by}</div>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <p className="muted" style={{ fontSize: "0.9em" }}>Press <strong>!</strong> for why it matters and the official CISA wording.</p>
+          {rows.map((r) => <PolicyCard key={`${r.product}-${r.policy_id}`} r={r} />)}
         </>
       )}
     </>

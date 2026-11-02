@@ -233,3 +233,11 @@ def test_beta_authorization_policy_collection_is_unwrapped_like_trycommand() -> 
     out = run(r)
     assert out["MS.AAD.5.1v1"].status == "fail"
     assert out["MS.AAD.8.2v1"].status == "warning"
+
+
+def test_every_entra_policy_has_plain_wording() -> None:
+    from app import plain
+    from app.scuba.baseline import requirements
+
+    assert set(requirements("aad")) == set(plain.SCUBA)
+    assert all(t and w and f and "SHALL" not in t for t, w, f in plain.SCUBA.values())

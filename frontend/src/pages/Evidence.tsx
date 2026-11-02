@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow } from "../api";
+import { FindingCard, methodText, PlainFinding } from "../components/Plain";
 import Export from "./Export";
 
 type Control = { control: number; name: string; answer: string; state: string; evidence: string; method: string; as_of: string | null };
@@ -11,7 +12,7 @@ type Pack = {
   generated_at: string;
   generated_by: string;
   controls: Control[];
-  findings: { key: string; title: string; severity: string; area: string; recommendation: string }[];
+  findings: PlainFinding[];
   remediation: { open: number; overdue: number; closed: number; items: { title: string; owner: string; status: string; target_date: string | null; closed_reason: string | null }[] };
   devices: { total: number; edr_active: number };
   statement: string;
@@ -83,31 +84,33 @@ export default function Evidence() {
             Evidence as of {day(pack.as_of)} · generated {new Date(pack.generated_at).toLocaleString()} by {pack.generated_by}
           </p>
           <table>
-            <thead><tr><th>Control</th><th>Answer</th><th>Evidence</th><th>How established</th><th>Date</th></tr></thead>
+            <thead><tr><th>Control</th><th>Answer</th><th>What we found</th><th>How we know</th><th>Date</th></tr></thead>
             <tbody>
               {pack.controls.map((c) => (
                 <tr key={c.control}>
                   <td>{c.control} {c.name}</td>
                   <td><span className={`pill ${ANSWER_PILL[c.answer] ?? ""}`}>{c.answer}</span></td>
                   <td>{c.evidence}</td>
-                  <td className="muted">{c.method}</td>
+                  <td className="muted">{methodText(c.method)}</td>
                   <td>{day(c.as_of)}</td>
                 </tr>
               ))}
               {pack.controls.length === 0 && <tr><td colSpan={5} className="muted">No scored scan yet.</td></tr>}
             </tbody>
           </table>
-          {pack.devices.total > 0 && <p>Devices: {pack.devices.total}, EDR active on {pack.devices.edr_active}.</p>}
+          <div className="stats" style={{ marginTop: "1rem" }}>
+            <div className="stat good"><div className="n">{pack.controls.filter((c) => c.answer === "Yes").length}</div><div className="l">controls in place</div></div>
+            <div className="stat bad"><div className="n">{pack.controls.filter((c) => c.answer === "No").length}</div><div className="l">controls not in place</div></div>
+            <div className="stat warn"><div className="n">{pack.controls.filter((c) => c.answer.startsWith("Partial")).length}</div><div className="l">partly in place</div></div>
+            {pack.devices.total > 0 && (
+              <div className="stat"><div className="n">{pack.devices.edr_active} / {pack.devices.total}</div><div className="l">computers with active EDR</div></div>
+            )}
+          </div>
           {dest === "management" && (
             <>
-              <h3>Findings ({pack.findings.length})</h3>
-              <table>
-                <tbody>
-                  {pack.findings.map((f) => (
-                    <tr key={f.key}><td><span className="pill">{f.severity}</span></td><td>{f.title}</td><td className="muted">{f.recommendation}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+              <h3>What to fix ({pack.findings.length})</h3>
+              <p className="muted no-print" style={{ fontSize: "0.9em" }}>Press <strong>!</strong> on a finding for why it matters and the technical reference.</p>
+              {pack.findings.map((f) => <FindingCard key={f.key} f={f} />)}
             </>
           )}
           <h3>Remediation</h3>

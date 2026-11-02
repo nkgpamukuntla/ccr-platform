@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from psycopg.types.json import Jsonb
 
-from app import audit, entra_devices
+from app import audit, entra_devices, plain
 from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.config import Settings, get_settings
@@ -126,6 +126,15 @@ def posture(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
         f = conn.execute("SELECT facts FROM run_facts WHERE run_id = %s", (latest["id"],)).fetchone()
         devs = office_devices(conn, office_id)
     controls = [_edr_from_devices(c, devs) if c["control"] == 5 else c for c in controls]
+    controls = [
+        {
+            **c,
+            "about": plain.ABOUT.get(c["control"], ""),
+            "label": plain.STATE.get(c["state"], c["state"]),
+            "summary": plain.summary(c),
+        }
+        for c in controls
+    ]
     fx = {k: v for k, v in f["facts"].items() if k != "entra_devices"} if f else None
     return {"run": latest, "last_attempt": last_attempt, "controls": controls, "facts": fx}
 
