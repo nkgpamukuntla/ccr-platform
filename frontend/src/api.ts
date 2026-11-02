@@ -99,13 +99,24 @@ export type Connection = {
 };
 export type Check = { check: string; result: "pass" | "warn" | "fail"; action: string };
 export type ControlRow = { control: number; name: string; state: "met" | "gap" | "weak" | "not_observed" | "pending"; method: string; detail: Record<string, unknown>; as_of: string };
+export type EntraSummary = {
+  total: number;
+  managed: number;
+  compliant: number;
+  activity?: { active: number; recent: number; stale: number; never: number };
+  join?: Record<string, number>;
+  os?: Record<string, number>;
+  repeated_names?: number;
+  extra_records?: number;
+  company_computers_active?: number;
+};
 export type Posture = {
   run: { id: string; started_at: string; finished_at: string; ms_tenant_id: string; summary: Record<string, number> } | null;
   last_attempt: { started_at: string; status: string; error: string | null } | null;
   controls: ControlRow[];
   facts: {
     licences: { sku: string; enabled: number; consumed: number }[];
-    devices: { total: number; managed: number; compliant: number } | null;
+    devices: EntraSummary | null;
     reads: Record<string, number>;
   } | null;
 };

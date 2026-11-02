@@ -680,6 +680,12 @@ def test_findings_remediation_evidence_exports_and_email(client: Any) -> None:
             == 201
         )
 
+    ent = client.get(f"/api/offices/{oid}/entra-devices", headers=ADMIN).json()
+    assert ent["summary"]["total"] == 2 and ent["edr"]["company_computers_active"] == 0 and "records" not in ent
+    assert "entra_devices" not in client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()["facts"]
+    assert client.get(f"/api/offices/{oid}/entra-devices", headers=OTHER).status_code in (403, 404)
+    assert client.get(f"/api/offices/{oid}/export/entra-devices.xlsx", headers=ADMIN).status_code == 200
+
     reg = client.get(f"/api/offices/{oid}/register", headers=ADMIN).json()
     keys = {f["key"]: f for f in reg["findings"]}
     assert {"control:1", "control:3", "device:edr_missing", "device:edr_stale"} <= set(keys)
@@ -717,7 +723,7 @@ def test_findings_remediation_evidence_exports_and_email(client: Any) -> None:
         assert client.get(f"/api/offices/{oid}/export/{what}.xlsx", headers=ADMIN).status_code == 200
     assert client.get(f"/api/offices/{oid}/export/secrets.csv", headers=ADMIN).status_code == 404
     audit_rows = client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()
-    assert sum(1 for a in audit_rows if a["action"] == "export.downloaded") == 6
+    assert sum(1 for a in audit_rows if a["action"] == "export.downloaded") == 7
     assert any(len(a["detail"].get("sha256", "")) == 64 for a in audit_rows)
 
     # Fresh evidence clears the finding: the item closes itself.

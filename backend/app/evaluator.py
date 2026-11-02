@@ -104,7 +104,7 @@ def evaluate_pending(s3: Any, bucket: str, limit: int = 50) -> dict[str, int]:
                     )
                 conn.execute(
                     "INSERT INTO run_facts (run_id, office_id, facts) VALUES (%s, %s, %s)",
-                    (run["id"], run["office_id"], Jsonb(facts(bundle))),
+                    (run["id"], run["office_id"], Jsonb(facts(bundle, run["finished_at"]))),
                 )
                 conn.execute("UPDATE collection_run SET status = 'evaluated' WHERE id = %s", (run["id"],))
             done["evaluated"] += 1

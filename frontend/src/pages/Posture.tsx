@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow, Posture as PostureData } from "../api";
+import EntraDevices from "./EntraDevices";
 import Export from "./Export";
 
 const LABEL: Record<string, string> = { met: "Met", gap: "Gap", weak: "Weak", not_observed: "Not observed", pending: "Pending" };
@@ -29,10 +30,16 @@ export function PosturePicker() {
   );
 }
 
+function value(v: unknown): string {
+  if (Array.isArray(v)) return v.map(value).join(", ");
+  if (v && typeof v === "object") return Object.entries(v).map(([k, x]) => `${k} ${value(x)}`).join(", ");
+  return String(v);
+}
+
 function detailText(d: Record<string, unknown>): string {
   return Object.entries(d)
     .filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && v.length === 0))
-    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+    .map(([k, v]) => `${k.replace(/_/g, " ")}: ${value(v)}`)
     .join(" · ");
 }
 
@@ -68,7 +75,12 @@ export default function Posture() {
       ) : (
         <>
           <div className="row" style={{ marginBottom: "1rem" }}>
-            <div className="card"><strong>{p.facts?.devices?.total ?? "—"}</strong><div className="muted">devices</div></div>
+            <div className="card">
+              <strong>{p.facts?.devices?.activity?.active ?? p.facts?.devices?.total ?? "—"}</strong>
+              <div className="muted">
+                {p.facts?.devices?.activity ? `active devices of ${p.facts.devices.total} Entra ID records` : "Entra ID device records"}
+              </div>
+            </div>
             <div className="card"><strong>{measured}</strong><div className="muted">measured</div></div>
             <div className="card"><strong>{attested}</strong><div className="muted">attested</div></div>
             <div className="card"><strong>{new Date(p.run.finished_at).toLocaleString()}</strong><div className="muted">as of · tenant {p.run.ms_tenant_id}</div></div>
@@ -81,11 +93,20 @@ export default function Posture() {
                   <td>{c.control} {c.name}</td>
                   <td><span className={`pill ${PILL[c.state]}`}>{LABEL[c.state]}</span></td>
                   <td>{c.method}</td>
-                  <td className="muted">{detailText(c.detail)}</td>
+                  <td className="muted">
+                    {detailText(Object.fromEntries(Object.entries(c.detail).filter(([k]) => k !== "graph_reading")))}
+                    {c.detail.graph_reading != null && (
+                      <details style={{ fontSize: "0.85em" }}>
+                        <summary>Graph reading</summary>
+                        {detailText(c.detail.graph_reading as Record<string, unknown>)}
+                      </details>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {p.facts?.devices && <EntraDevices officeId={officeId} />}
           {p.facts && (
             <>
               <h2>What Microsoft returned</h2>

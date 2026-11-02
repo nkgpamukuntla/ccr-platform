@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from psycopg.types.json import Jsonb
 
-from app import audit
+from app import audit, entra_devices
 from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.config import Settings, get_settings
@@ -126,7 +126,37 @@ def posture(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
         f = conn.execute("SELECT facts FROM run_facts WHERE run_id = %s", (latest["id"],)).fetchone()
         devs = office_devices(conn, office_id)
     controls = [_edr_from_devices(c, devs) if c["control"] == 5 else c for c in controls]
-    return {"run": latest, "last_attempt": last_attempt, "controls": controls, "facts": f["facts"] if f else None}
+    fx = {k: v for k, v in f["facts"].items() if k != "entra_devices"} if f else None
+    return {"run": latest, "last_attempt": last_attempt, "controls": controls, "facts": fx}
+
+
+def entra_device_records(conn: Any, office_id: UUID) -> dict[str, Any] | None:
+    """The latest scan's Entra device records, explained and checked against the EDR register."""
+    row = conn.execute(
+        "SELECT r.finished_at, f.facts->'devices' AS summary, f.facts->'entra_devices' AS records "
+        "FROM collection_run r JOIN run_facts f ON f.run_id = r.id "
+        "WHERE r.office_id = %s AND r.status = 'evaluated' ORDER BY r.started_at DESC LIMIT 1",
+        (office_id,),
+    ).fetchone()
+    if row is None or row["records"] is None:
+        return None
+    edr = [d for d in office_devices(conn, office_id) if d["edr"] != "none"]
+    return {
+        "as_of": row["finished_at"],
+        "summary": row["summary"],
+        **entra_devices.explain(row["records"], row["finished_at"], edr),
+    }
+
+
+@router.get("/api/offices/{office_id}/entra-devices")
+def entra_devices_view(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
+    with tx() as conn:
+        can_read(conn, user, office_id)
+        out = entra_device_records(conn, office_id)
+    if out is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No device records yet: they arrive with the next scan")
+    out.pop("records")
+    return out
 
 
 def _edr_from_devices(c: dict[str, Any], devs: list[dict[str, Any]]) -> dict[str, Any]:

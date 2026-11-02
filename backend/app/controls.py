@@ -5,10 +5,12 @@ not answer (403/404, or a licence the tenant lacks) makes the dependent control
 `not_observed`: an unobserved answer never produces a met, and never an adverse result either.
 """
 
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app import entra_devices
 from app.microsoft.graph import items
 
 State = Literal["met", "gap", "weak", "not_observed", "pending"]
@@ -242,9 +244,10 @@ def evaluate(bundle: dict[str, Any]) -> list[ControlResult]:
     return results
 
 
-def facts(bundle: dict[str, Any]) -> dict[str, Any]:
+def facts(bundle: dict[str, Any], at: datetime | None = None) -> dict[str, Any]:
     """Context shown beside the controls: licences, devices, and what each read returned."""
     reads = _reads(bundle)
+    ok = _status(reads, "devices") == 200
     skus = items(reads.get("subscribed_skus", {}))
     devices = items(reads.get("devices", {}))
     return {
@@ -257,12 +260,7 @@ def facts(bundle: dict[str, Any]) -> dict[str, Any]:
             for s in skus
             if s.get("capabilityStatus") == "Enabled"
         ],
-        "devices": {
-            "total": len(devices),
-            "managed": sum(1 for d in devices if d.get("isManaged")),
-            "compliant": sum(1 for d in devices if d.get("isCompliant")),
-        }
-        if _status(reads, "devices") == 200
-        else None,
+        "devices": entra_devices.summarize(devices, at or datetime.now(UTC)) if ok else None,
+        "entra_devices": entra_devices.rows(devices) if ok else None,
         "reads": {name: r.get("status") for name, r in reads.items()},
     }

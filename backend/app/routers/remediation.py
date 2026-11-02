@@ -11,13 +11,13 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, EmailStr, Field
 
-from app import audit, exports, findings_engine, notify, remediation
+from app import audit, entra_devices, exports, findings_engine, notify, remediation
 from app.access import can_read, can_write
 from app.auth import CurrentUser
 from app.config import get_settings
 from app.db import tx
 from app.routers.imports import office_devices
-from app.routers.microsoft import _edr_from_devices
+from app.routers.microsoft import _edr_from_devices, entra_device_records
 
 router = APIRouter(prefix="/api/offices/{office_id}", tags=["remediation"])
 
@@ -253,7 +253,7 @@ def evidence_pack(office_id: UUID, user: CurrentUser, destination: str = "manage
 
 # ---------- exports ----------
 
-EXPORTS = ("findings", "remediation", "devices", "posture", "audit", "evidence-pack")
+EXPORTS = ("findings", "remediation", "devices", "entra-devices", "posture", "audit", "evidence-pack")
 
 
 def _sheets(
@@ -356,6 +356,62 @@ def _sheets(
                     for d in devs
                 ],
             )
+        }
+    if what == "entra-devices":
+        x = entra_device_records(conn, office_id)
+        if x is None:
+            raise HTTPException(404, "No device records yet: they arrive with the next scan")
+        reason = {entra_devices.host(g["name"]): (g["records"], g["reason"]) for g in x["repeats"]}
+        edr = x["edr"]
+        missing = {entra_devices.host(r["name"]) for r in edr["without_edr"]} if edr else set()
+        return {
+            "Entra devices": (
+                [
+                    "Name",
+                    "OS",
+                    "Version",
+                    "Join type",
+                    "Ownership",
+                    "Intune managed",
+                    "Compliant",
+                    "Activity",
+                    "Last sign-in",
+                    "Registered",
+                    "Records with this name",
+                    "Why repeated",
+                    "Active company computer without EDR",
+                ],
+                [
+                    [
+                        r["name"],
+                        r["os"],
+                        r["os_version"],
+                        r["join"],
+                        r["ownership"],
+                        r["managed"],
+                        r["compliant"],
+                        r["activity"],
+                        r["last_sign_in"],
+                        r["registered"],
+                        *reason.get(entra_devices.host(r["name"]), (1, "")),
+                        (
+                            "Yes"
+                            if entra_devices.host(r["name"]) in missing
+                            and r["activity"] == "active"
+                            and r["join"] in entra_devices.COMPANY_JOINS
+                            else ""
+                            if edr
+                            else "No EDR register yet"
+                        ),
+                    ]
+                    for r in x["records"]
+                ],
+            ),
+            "Repeated names": (
+                ["Name", "Records", "Why", "Newest sign-in"],
+                [[g["name"], g["records"], g["reason"], g["keep"]] for g in x["repeats"]],
+            ),
+            "In EDR, not active in Entra": (["Hostname"], [[h] for h in (edr["edr_only"] if edr else [])]),
         }
     if what == "audit":
         rows = conn.execute(

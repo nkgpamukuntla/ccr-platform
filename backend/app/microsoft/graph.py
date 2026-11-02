@@ -36,7 +36,8 @@ READS = [
     Read("auth_methods_registration", "/v1.0/reports/authenticationMethods/userRegistrationDetails", "AuditLog.Read.All"),
     Read(
         "devices",
-        "/v1.0/devices?$select=id,displayName,operatingSystem,operatingSystemVersion,isCompliant,isManaged,trustType,approximateLastSignInDateTime",
+        "/v1.0/devices?$top=999&$select=id,displayName,operatingSystem,operatingSystemVersion,isCompliant,isManaged,trustType,"
+        "approximateLastSignInDateTime,registrationDateTime,deviceOwnership",
         "Device.Read.All",
     ),
     Read("subscribed_skus", "/v1.0/subscribedSkus", "LicenseAssignment.Read.All"),

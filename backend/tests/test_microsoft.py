@@ -182,8 +182,49 @@ def test_later_phase_controls_are_never_met() -> None:
 def test_facts_summarise_licences_and_devices() -> None:
     f = facts(bundle())
     assert f["licences"] == [{"sku": "SPE_E5", "enabled": 25, "consumed": 20}]
-    assert f["devices"] == {"total": 2, "managed": 1, "compliant": 0}
+    d = f["devices"]
+    assert (d["total"], d["managed"], d["compliant"]) == (2, 1, 0)
+    assert d["activity"] == {"active": 0, "recent": 0, "stale": 0, "never": 2}
+    assert len(f["entra_devices"]) == 2
     assert json.dumps(f)  # stored as JSON
+
+
+def test_entra_device_records_explain_repeats_and_missing_edr() -> None:
+    from datetime import UTC, datetime
+
+    from app import entra_devices
+
+    at = datetime(2026, 11, 2, tzinfo=UTC)
+
+    def dev(name: str, seen: str | None, trust: str = "AzureAd", os: str = "Windows") -> dict[str, Any]:
+        return {"displayName": name, "operatingSystem": os, "trustType": trust, "approximateLastSignInDateTime": seen}
+
+    raw = [
+        dev("PC-01", "2026-10-30T00:00:00Z"),
+        dev("PC-01", "2025-01-01T00:00:00Z"),  # reimaged: old record left behind
+        dev("PC-02", "2026-10-20T00:00:00Z", "ServerAd"),
+        dev("pc-02.corp.local", "2026-10-25T00:00:00Z", "Workplace"),  # registered and joined
+        dev("OLD-PC", "2024-01-01T00:00:00Z"),
+        dev("OLD-PC", None),  # retired
+        dev("iPhone", "2026-10-30T00:00:00Z", "Workplace", "iOS"),
+        dev("iPhone", "2026-10-29T00:00:00Z", "Workplace", "iOS"),  # different phones
+        dev("PC-03", "2026-10-31T00:00:00Z"),
+    ]
+    s = entra_devices.summarize(raw, at)
+    assert s["total"] == 9 and s["activity"] == {"active": 6, "recent": 0, "stale": 2, "never": 1}
+    assert s["join"] == {"Entra joined": 5, "Registered": 3, "Hybrid joined": 1}
+    assert (s["repeated_names"], s["extra_records"], s["company_computers_active"]) == (4, 4, 3)
+
+    x = entra_devices.explain(entra_devices.rows(raw), at, [{"hostname": "pc-01", "edr": "active"}, {"hostname": "SRV-9"}])
+    why = {entra_devices.host(g["name"]): g["reason"] for g in x["repeats"]}
+    assert why["pc-01"].startswith("Reimaged")
+    assert why["pc-02"].startswith("Registered by a user")
+    assert why["old-pc"].startswith("Retired")
+    assert why["iphone"].startswith("Default phone")
+    assert x["edr"]["company_computers_active"] == 3 and x["edr"]["with_edr"] == 1
+    assert sorted(r["name"] for r in x["edr"]["without_edr"]) == ["PC-02", "PC-03"]
+    assert x["edr"]["edr_only"] == ["SRV-9"]
+    assert entra_devices.explain(entra_devices.rows(raw), at, [])["edr"] is None
 
 
 def test_risk_based_policy_is_not_mfa_for_everyone() -> None:
