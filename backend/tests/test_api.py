@@ -606,3 +606,190 @@ def test_workspaces_types_schedule_and_viewers(client: Any) -> None:
     )
     assert client.delete(f"/api/workspaces/{wid}/viewers/ciso@dbiz-demo.org", headers=ADMIN).status_code == 200
     assert client.get("/api/offices", headers=ciso).json() == []
+
+
+def _collect_and_score(oid: str, tenant: str) -> None:
+    """One worker collection (ec_worker) and evaluation (ec_evaluator) for an office, as in production."""
+    from tests.test_microsoft import bundle as make_bundle
+    from tests.test_microsoft import policy
+
+    regs = [{"userPrincipalName": "admin@lab", "isAdmin": True, "isMfaRegistered": True, "methodsRegistered": ["mobilePhone"]}]
+    reads = make_bundle(ca=[policy("Require MFA", state="enabledForReportingButNotEnforced")], regs=regs)["reads"]
+    stored: dict[str, bytes] = {}
+
+    class FakeS3:
+        def put_object(self, **kw: Any) -> dict[str, str]:
+            stored[kw["Key"]] = kw["Body"]
+            return {"VersionId": "v1"}
+
+        def get_object(self, **kw: Any) -> dict[str, Any]:
+            import io
+
+            return {"Body": io.BytesIO(stored[kw["Key"]])}
+
+    from app import worker
+    from app.config import get_settings
+    from app.evaluator import evaluate_pending
+
+    try:
+        _as_role("ec_worker")
+        s = get_settings().model_copy(update={"ms_client_id": "app", "ec_raw_bucket": "raw", "ec_raw_keys": {oid: "arn:k"}})
+        with (
+            mock.patch("app.worker.get_token", return_value="token"),
+            mock.patch(
+                "app.worker.graph.fetch",
+                side_effect=lambda _h, _t, rd: next((x | {"name": rd.name} for x in reads if x["name"] == rd.name), None)
+                or {"name": rd.name, "status": 404, "pages": []},
+            ),
+            mock.patch("app.worker.boto3.client", return_value=FakeS3()),
+            mock.patch("app.worker.scuba_aad.LiveGraph", return_value=mock.Mock(responses={})),
+            mock.patch("app.worker.scuba_aad.build_provider"),
+        ):
+            assert worker.collect_one(s, mock.Mock(), mock.Mock(), oid, tenant, "fp") == "collected"
+        _as_role("ec_evaluator")
+        assert evaluate_pending(FakeS3(), "raw")["evaluated"] >= 1
+    finally:
+        _as_role("ec_portal")
+
+
+def test_findings_remediation_evidence_exports_and_email(client: Any) -> None:
+    """Phase 5: findings register, tracker that closes only on fresh evidence, evidence pack,
+    exports with audit, and one quiet email per scan sent by the worker."""
+    from tests.test_imports import FALCON, RMM
+
+    ws = client.post(
+        "/api/workspaces", headers=ADMIN, json={"name": "Phase5 Co", "kind": "organization", "industry": "IT"}
+    ).json()
+    oid = client.post(
+        "/api/offices",
+        headers=ADMIN,
+        json={
+            "workspace_id": ws["id"],
+            "name": "HQ",
+            "office_type": "Head office",
+            "county": "Singapore",
+            "time_zone": "Asia/Kolkata",
+        },
+    ).json()["id"]
+    tenant = "1a1a1a1a-0b0a-0908-0706-050403020100"
+    assert client.post(f"/api/offices/{oid}/consents/microsoft365", headers=ADMIN, json={"tenant_ref": tenant}).status_code == 201
+    _collect_and_score(oid, tenant)
+    for name, tpl, body in (("falcon.csv", "edr_hosts", FALCON), ("rmm.csv", "rmm_inventory", RMM)):
+        assert (
+            client.post(f"/api/offices/{oid}/imports?template={tpl}&filename={name}", headers=ADMIN, content=body).status_code
+            == 201
+        )
+
+    reg = client.get(f"/api/offices/{oid}/register", headers=ADMIN).json()
+    keys = {f["key"]: f for f in reg["findings"]}
+    assert {"control:1", "control:3", "device:edr_missing", "device:edr_stale"} <= set(keys)
+    assert keys["control:3"]["title"] == "1 admin(s) with phone-only MFA" and keys["control:3"]["severity"] == "High"
+    assert keys["device:edr_missing"]["evidence"]["sample"] == ["SCANNER-PC"]
+    assert reg["findings"][0]["severity"] == "Mandatory"  # most severe first
+
+    # Track and move; never close by hand; outsiders cannot touch it.
+    new = {"finding_key": "device:edr_missing", "owner": "IT team", "target_date": "2026-01-01"}
+    assert client.post(f"/api/offices/{oid}/remediation", headers=OTHER, json=new).status_code in (403, 404)
+    item = client.post(f"/api/offices/{oid}/remediation", headers=ADMIN, json=new).json()["id"]
+    assert client.post(f"/api/offices/{oid}/remediation", headers=ADMIN, json=new).status_code == 409
+    assert client.post(f"/api/offices/{oid}/remediation", headers=ADMIN, json={**new, "finding_key": "nope"}).status_code == 404
+    url = f"/api/offices/{oid}/remediation/{item}"
+    assert client.patch(url, headers=ADMIN, json={"status": "closed"}).status_code == 422
+    moved = client.patch(url, headers=ADMIN, json={"status": "awaiting_evidence", "note": "agent pushed"})
+    assert moved.json()["status"] == "awaiting_evidence"
+    items = client.get(f"/api/offices/{oid}/remediation", headers=ADMIN).json()
+    assert items[0]["status"] == "awaiting_evidence" and items[0]["overdue"] and len(items[0]["events"]) == 2
+
+    # Evidence pack: coverage is a count, not a yes.
+    pack = client.get(f"/api/offices/{oid}/evidence-pack?destination=irma", headers=ADMIN).json()
+    c = {x["control"]: x for x in pack["controls"]}
+    assert c[5]["answer"] == "Partial" and c[5]["evidence"] == "2 of 4 devices with an active EDR agent"
+    assert c[1]["answer"] == "Partial (weak method)" and c[6]["answer"] == "Pending attestation"
+    assert "Phase5 Co remains responsible" in pack["statement"]
+    assert client.get(f"/api/offices/{oid}/evidence-pack?destination=nope", headers=ADMIN).status_code == 400
+
+    # Exports: Excel and CSV, each audited with its hash.
+    x = client.get(f"/api/offices/{oid}/export/evidence-pack.xlsx?destination=irma", headers=ADMIN)
+    assert x.status_code == 200 and x.content[:2] == b"PK" and "attachment" in x.headers["content-disposition"]
+    csv_ = client.get(f"/api/offices/{oid}/export/devices.csv", headers=ADMIN)
+    assert csv_.content.decode("utf-8-sig").startswith("Hostname,Serial,OS,EDR")
+    for what in ("findings", "remediation", "posture", "audit"):
+        assert client.get(f"/api/offices/{oid}/export/{what}.xlsx", headers=ADMIN).status_code == 200
+    assert client.get(f"/api/offices/{oid}/export/secrets.csv", headers=ADMIN).status_code == 404
+    audit_rows = client.get(f"/api/offices/{oid}/audit", headers=ADMIN).json()
+    assert sum(1 for a in audit_rows if a["action"] == "export.downloaded") == 6
+    assert any(len(a["detail"].get("sha256", "")) == 64 for a in audit_rows)
+
+    # Fresh evidence clears the finding: the item closes itself.
+    fixed = FALCON + "SCANNER-PC,aid-9,7.18.19105,Online,2026-10-21T08:00:00Z,SN009,Windows\n"
+    r = client.post(f"/api/offices/{oid}/imports?template=edr_hosts&filename=falcon2.csv", headers=ADMIN, content=fixed)
+    assert r.status_code == 201
+    items = client.get(f"/api/offices/{oid}/remediation", headers=ADMIN).json()
+    assert items[0]["status"] == "closed" and items[0]["closed_reason"].startswith("Closed by re-read")
+    assert items[0]["events"][-1]["actor"] == "evidence"
+
+    # Notifications: one email per scored scan, queued and sent by the worker.
+    assert (
+        client.post(f"/api/offices/{oid}/notifications", headers=ADMIN, json={"email": "Ops@Phase5.example"}).status_code == 201
+    )
+    from app import db, notify
+    from app.config import get_settings
+
+    sent: list[dict[str, Any]] = []
+
+    def send_email(**kw: Any) -> dict[str, str]:
+        sent.append(kw)
+        return {"MessageId": "m1"}
+
+    try:
+        _as_role("ec_worker")
+        with db.tx() as conn:
+            assert notify.report_new_runs(conn) >= 1
+        with db.tx() as conn:
+            assert notify.report_new_runs(conn) == 0  # once per scan
+        with (
+            mock.patch.object(get_settings(), "ses_from", "CCR <noreply@example.org>"),
+            mock.patch("app.notify.boto3.client", return_value=mock.Mock(send_email=send_email)),
+            db.tx() as conn,
+        ):
+            assert notify.send_pending(conn)["sent"] >= 1
+    finally:
+        _as_role("ec_portal")
+    mine = [m for m in sent if m["Destination"]["ToAddresses"] == ["ops@phase5.example"]]
+    assert len(mine) == 1
+    text = mine[0]["Content"]["Simple"]["Body"]["Text"]["Data"]
+    assert "IST" in text and "first reported scan" in text and f"/offices/{oid}/remediation" in text
+    n = client.get(f"/api/offices/{oid}/notifications", headers=ADMIN).json()
+    assert n["recipients"][0]["email"] == "ops@phase5.example" and n["recent"][0]["sent_at"]
+
+
+def test_scan_report_lists_changes_since_previous_scan() -> None:
+    from datetime import UTC, datetime
+
+    from app import notify
+
+    prev = [{"key": "a", "title": "Old gap", "severity": "High"}, {"key": "b", "title": "3 devices stale", "severity": "High"}]
+    cur = [
+        {"key": "b", "title": "1 devices stale", "severity": "High"},
+        {"key": "c", "title": "New gap", "severity": "Mandatory"},
+    ]
+    d = notify.diff(prev, cur)
+    assert [f["key"] for f in d["new"]] == ["c"] and [f["key"] for f in d["resolved"]] == ["a"] and len(d["changed"]) == 1
+    head = {
+        "controls": {"1": {"name": "MFA", "state": "met"}},
+        "devices": 10,
+        "edr_active": 9,
+        "findings": 2,
+        "by_severity": {"High": 1},
+    }
+    office = {"id": "o1", "name": "D-Biz", "workspace": "D-Biz", "time_zone": "Asia/Kolkata"}
+    was = {
+        "taken_at": datetime(2026, 11, 1, 12, 40, tzinfo=UTC),
+        "headline": {"controls": {"1": {"state": "gap"}}, "devices": 10, "edr_active": 8},
+    }
+    rem = {"open": 1, "overdue": 0, "closed_now": 1}
+    subject, body = notify.render_report(office, datetime(2026, 11, 2, 12, 40, tzinfo=UTC), head, was, d, rem)
+    assert subject == "[CCR] D-Biz: scan 02 Nov - 2 findings, 1 new, 1 resolved"
+    assert "02 Nov 2026 18:10 IST" in body and "MFA: Met  (was Gap)" in body
+    assert "New (1):" in body and "Resolved (1):" in body and "3 devices stale  ->  1 devices stale" in body
+    assert "previous scan 10 devices, 8 active" in body

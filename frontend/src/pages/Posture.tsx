@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow, Posture as PostureData } from "../api";
+import Export from "./Export";
 
 const LABEL: Record<string, string> = { met: "Met", gap: "Gap", weak: "Weak", not_observed: "Not observed", pending: "Pending" };
 const PILL: Record<string, string> = { met: "pass", gap: "fail", weak: "warn", not_observed: "", pending: "" };
@@ -51,7 +52,10 @@ export default function Posture() {
 
   return (
     <>
-      <h1>Control posture</h1>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>Control posture</h1>
+        <Export officeId={officeId} what="posture" />
+      </div>
       <p className="lead">The eight controls, each with how it was established and when. No composite score; missing evidence reads Not observed, never met.</p>
       {p.last_attempt && p.last_attempt.status === "failed" && (
         <div className="card error">Last collection failed {new Date(p.last_attempt.started_at).toLocaleString()}: {p.last_attempt.error}</div>

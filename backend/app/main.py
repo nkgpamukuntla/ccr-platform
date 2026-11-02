@@ -19,7 +19,7 @@ from app.access import viewer_workspaces
 from app.auth import CurrentUser, User, safe_next
 from app.config import get_settings
 from app.db import tx
-from app.routers import aoc, collector, findings, imports, microsoft, offices, onboarding, users, workspaces
+from app.routers import aoc, collector, findings, imports, microsoft, offices, onboarding, remediation, users, workspaces
 
 
 @asynccontextmanager
@@ -41,6 +41,7 @@ app.include_router(imports.router)
 app.include_router(collector.router)
 app.include_router(aoc.router)
 app.include_router(workspaces.router)
+app.include_router(remediation.router)
 
 
 @app.middleware("http")

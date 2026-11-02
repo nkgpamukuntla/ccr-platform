@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import { CollectedFacts, CollectorCard } from "./Collector";
+import Export from "./Export";
 
 type Template = { key: string; label: string; source: string; required: string[]; one_of: string[]; optional: string[] };
 type Issue = { row: number | null; level: "error" | "warning"; message: string };
@@ -112,7 +113,10 @@ export default function Devices() {
   const rows = reg.devices.filter((d) => only === "all" || (only === "uncovered" ? d.edr !== "active" : !d.matched));
   return (
     <>
-      <h1>Devices</h1>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>Devices</h1>
+        <Export officeId={officeId} what="devices" />
+      </div>
       <p className="lead">Devices matched across sources (serial first, then hostname). Unmatched devices are listed, never dropped. Click a collected device (▸) to see what the collector read. <Link to="/offices">Back to offices</Link></p>
       <div className="row" style={{ marginBottom: "1rem" }}>
         <div className="card"><strong>{reg.coverage.devices}</strong><div className="muted">devices</div></div>

@@ -28,6 +28,25 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Download a file the API renders (exports are audited server-side with their hash). */
+export async function download(path: string): Promise<void> {
+  const res = await fetch(path, { credentials: "same-origin" });
+  if (res.status === 401) {
+    window.location.href = "/auth/login?next=" + encodeURIComponent(window.location.pathname);
+    return;
+  }
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") || "")?.[1] || "export";
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export const put = <T,>(path: string, body: unknown) => api<T>(path, { method: "PUT", body: JSON.stringify(body) });
 export const post = <T,>(path: string, body: unknown = {}) => api<T>(path, { method: "POST", body: JSON.stringify(body) });
 

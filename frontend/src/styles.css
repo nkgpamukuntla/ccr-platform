@@ -68,3 +68,11 @@ button:disabled { opacity: 0.5; cursor: default; }
   .grid2 { grid-template-columns: 1fr; }
   .content { padding: 1rem; }
 }
+
+@media print {
+  .nav, .no-print, button { display: none !important; }
+  .shell { display: block; }
+  .content { padding: 0; }
+  .print-sheet { border: none; padding: 0; }
+  body { background: #fff; }
+}

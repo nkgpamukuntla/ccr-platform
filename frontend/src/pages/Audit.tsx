@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import Export from "./Export";
 
 type Entry = { at: string; actor_email: string; action: string; detail: Record<string, unknown> };
 
@@ -13,7 +14,10 @@ export default function Audit() {
   }, [officeId]);
   return (
     <>
-      <h1>Audit log</h1>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>Audit log</h1>
+        <Export officeId={officeId} what="audit" />
+      </div>
       <p className="lead">Append-only. <Link to="/offices">Back to offices</Link></p>
       {error && <div className="error">{error}</div>}
       <table>

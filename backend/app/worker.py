@@ -22,7 +22,7 @@ import boto3
 import httpx
 from psycopg.types.json import Jsonb
 
-from app import db, schedule
+from app import db, notify, schedule
 from app.config import Settings, get_settings
 from app.microsoft import graph
 from app.microsoft.signer import KmsSigner
@@ -57,6 +57,20 @@ def consented_offices() -> list[dict[str, Any]]:
             "ORDER BY k.office_id, k.granted_at DESC",
             (UUID_RE,),
         ).fetchall()
+
+
+def final_failure(o: dict[str, Any], now: datetime) -> bool:
+    """The run that just failed was the last retry for today's scan: say so, once."""
+    since = schedule.last_due(now, o["time_zone"], o["collect_at"])
+    return sum(1 for t in o["recent_failures"] if t >= since) + 1 >= schedule.MAX_RETRIES
+
+
+def notify_and_send() -> dict[str, int]:
+    """One report per newly scored scan (the evaluator scores between worker runs), then deliver."""
+    with db.tx() as conn:
+        queued = notify.report_new_runs(conn)
+    with db.tx() as conn:
+        return {"queued": queued, **notify.send_pending(conn)}
 
 
 def due(o: dict[str, Any], now: datetime) -> bool:
@@ -185,8 +199,16 @@ def main() -> int:
                     continue
                 outcome = collect_one(s, http, signer, o["office_id"], o["tenant_ref"], fingerprint)
                 results[outcome] = results.get(outcome, 0) + 1
+                if outcome == "failed" and not only and final_failure(o, now):
+                    with db.tx() as conn:
+                        notify.report_failure(conn, o["office_id"], "collection failed")
+        try:
+            mail = notify_and_send()
+        except Exception as e:  # noqa: BLE001 (email must never stop collection or the heartbeat)
+            mail = {"error": 1}
+            log.error(json.dumps({"event": "notify_failed", "error": type(e).__name__, "message": str(e)[:300]}))
         heartbeat(s)
-        log.info(json.dumps({"event": "cycle_done", "results": results, "at": time.time()}))
+        log.info(json.dumps({"event": "cycle_done", "results": results, "mail": mail, "at": time.time()}))
         return 1 if results.get("failed") else 0
     finally:
         db.close_pool()

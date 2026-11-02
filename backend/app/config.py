@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # signed script and its certificate sit in the image.
     ec_collector_keys: dict[str, str] = {}
     collector_dir: str = "collector"
+    # Email (Phase 5): SES sender; empty keeps emails queued in the outbox, never sent.
+    ses_from: str = ""  # e.g. "CCR Platform <noreply@dbizsolution.com>"
     ec_heartbeat_namespace: str = "EvidenceCollector"
     ec_heartbeat_metric: str = "CollectionHeartbeat"
 
