@@ -118,7 +118,7 @@ export default function Devices() {
   return (
     <>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1>Devices</h1>
+        <div><div className="page-role">Devices · every computer</div><h1>Devices</h1></div>
         <Export officeId={officeId} what="devices" />
       </div>
       <p className="lead">

@@ -46,6 +46,7 @@ class Finding(BaseModel):
     as_of: datetime | None
     evidence: dict[str, Any]
     why: str = ""  # why it matters, in plain words
+    theme: str = ""  # the recommendation it belongs to (plain.THEMES)
     technical: str = ""  # the official wording, shown on request
 
 
@@ -179,4 +180,6 @@ def build(conn: Any, office_id: UUID) -> list[Finding]:
             "Upgrade to a supported Windows version or replace the device.",
             [d for d in devs if "windows 10" in (d["os"] or "").lower()],
         )
+    for f in out:
+        f.theme = plain.theme(f.key)
     return out

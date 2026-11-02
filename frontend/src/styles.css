@@ -111,3 +111,29 @@ button:disabled { opacity: 0.5; cursor: default; }
 .finding .more dd { margin: 0.1rem 0 0; color: var(--ink); }
 .info-btn { flex: none; width: 1.7rem; height: 1.7rem; padding: 0; border-radius: 50%; font-weight: 800; line-height: 1; background: #fff; color: var(--accent); border: 2px solid var(--accent); }
 .info-btn.on { background: var(--accent); color: #fff; }
+
+/* Office switcher in the nav */
+.switcher { padding: 0 0.5rem 0.9rem; margin-bottom: 0.4rem; border-bottom: 1px solid rgba(255,255,255,0.12); }
+.switcher label { color: rgba(255,255,255,0.6); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin: 0 0 0.3rem; }
+.switcher select { background: #1b2a48; color: #fff; border-color: rgba(255,255,255,0.25); max-width: 100%; }
+
+/* Action plan */
+.plan { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1rem; }
+.plan .ph { display: flex; gap: 0.9rem; align-items: flex-start; }
+.plan .step { flex: none; width: 2.2rem; height: 2.2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800; color: #fff; background: var(--accent); }
+.plan.Mandatory .step { background: var(--bad); } .plan.High .step { background: #d48a00; }
+.plan h3 { margin: 0; font-size: 1.1rem; }
+.plan .outcome { margin: 0.2rem 0 0; color: var(--muted); }
+.bar { height: 8px; background: #edf0f3; border-radius: 99px; overflow: hidden; margin: 0.6rem 0 0.2rem; }
+.bar > span { display: block; height: 100%; background: var(--good); }
+.plan .items { margin-top: 0.75rem; }
+.plan .items .finding { box-shadow: none; }
+
+/* Evidence answers */
+.qa { display: grid; grid-template-columns: 1fr auto; gap: 0.25rem 1rem; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem 1.1rem; margin-bottom: 0.6rem; break-inside: avoid; }
+.qa .q { font-weight: 600; font-size: 1.02rem; }
+.qa .a { grid-row: span 2; align-self: start; }
+.qa .a .pill { font-size: 0.95rem; padding: 0.25rem 0.8rem; }
+.qa .found { grid-column: 1; }
+.qa .how { grid-column: 1 / -1; font-size: 0.85em; color: var(--muted); }
+.page-role { display: inline-block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.2rem; }

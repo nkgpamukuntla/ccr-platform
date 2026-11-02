@@ -87,11 +87,11 @@ export default function Posture() {
   return (
     <>
       <div className="row" style={{ justifyContent: "space-between" }}>
-        <h1>Control posture</h1>
+        <div><div className="page-role">Posture · where you stand</div><h1>Control posture</h1></div>
         <Export officeId={officeId} what="posture" />
       </div>
       <p className="lead">
-        The eight controls courts ask about, in plain words. There is no overall score, and anything we could not check reads "Not checked
+        The eight controls courts and insurers ask about. There is no overall score, and anything we could not check reads "Not checked
         yet", never "In place". <Link to={`/offices/${officeId}/remediation`}>See what to fix</Link>
       </p>
       {p.last_attempt && p.last_attempt.status === "failed" && (

@@ -692,6 +692,9 @@ def test_findings_remediation_evidence_exports_and_email(client: Any) -> None:
     assert keys["control:3"]["title"] == "1 admin(s) with phone-only MFA" and keys["control:3"]["severity"] == "High"
     assert keys["device:edr_missing"]["evidence"]["sample"] == ["SCANNER-PC"]
     assert reg["findings"][0]["severity"] == "Mandatory"  # most severe first
+    plan = reg["themes"]
+    assert plan[0]["priority"] == "Mandatory" and sum(t["steps"] for t in plan) == len(reg["findings"])
+    assert {"mfa", "admins", "devices"} <= {t["key"] for t in plan}
 
     # Track and move; never close by hand; outsiders cannot touch it.
     new = {"finding_key": "device:edr_missing", "owner": "IT team", "target_date": "2026-01-01"}
@@ -710,6 +713,7 @@ def test_findings_remediation_evidence_exports_and_email(client: Any) -> None:
     pack = client.get(f"/api/offices/{oid}/evidence-pack?destination=irma", headers=ADMIN).json()
     c = {x["control"]: x for x in pack["controls"]}
     assert c[5]["answer"] == "Partial" and c[5]["evidence"] == "2 of 4 devices with an active EDR agent"
+    assert c[1]["question"].startswith("Is MFA required") and pack["plan"][0]["steps"] >= 1
     assert c[1]["answer"] == "Partial (weak method)" and c[6]["answer"] == "Pending attestation"
     assert "Phase5 Co remains responsible" in pack["statement"]
     assert client.get(f"/api/offices/{oid}/evidence-pack?destination=nope", headers=ADMIN).status_code == 400

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow } from "../api";
-import { FindingCard, methodText, PlainFinding } from "../components/Plain";
+import { methodText, SEV_LABEL, SEV_PILL } from "../components/Plain";
 import Export from "./Export";
 
-type Control = { control: number; name: string; answer: string; state: string; evidence: string; method: string; as_of: string | null };
+type Control = { control: number; name: string; question: string; answer: string; state: string; evidence: string; method: string; as_of: string | null };
+type Plan = { title: string; priority: string; steps: number; assigned: number; next_target: string | null };
 type Pack = {
   label: string;
   office: { name: string; workspace: string; office_type: string; county: string };
@@ -12,16 +13,16 @@ type Pack = {
   generated_at: string;
   generated_by: string;
   controls: Control[];
-  findings: PlainFinding[];
+  plan: Plan[];
   remediation: { open: number; overdue: number; closed: number; items: { title: string; owner: string; status: string; target_date: string | null; closed_reason: string | null }[] };
   devices: { total: number; edr_active: number };
   statement: string;
 };
 
 const DESTINATIONS = [
-  ["management", "Management report"],
-  ["irma", "ACCG-IRMA renewal"],
-  ["aoc", "AOC connection agreement"],
+  ["management", "Management report", "For your leadership: the answers plus how the fixes are going."],
+  ["irma", "ACCG-IRMA renewal", "For the insurance renewal questionnaire: the answers and their evidence."],
+  ["aoc", "AOC connection agreement", "For the court connection agreement: the answers and their evidence."],
 ] as const;
 const ANSWER_PILL: Record<string, string> = { Yes: "pass", No: "fail", Partial: "warn", "Partial (weak method)": "warn" };
 const day = (s: string | null) => (s ? new Date(s).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—");
@@ -33,7 +34,7 @@ export function EvidencePicker() {
   }, []);
   return (
     <>
-      <h1>Evidence pack</h1>
+      <h1>Evidence</h1>
       <p className="lead">Choose an office.</p>
       <table>
         <tbody>
@@ -58,18 +59,24 @@ export default function Evidence() {
     setPack(null);
     api<Pack>(`/api/offices/${officeId}/evidence-pack?destination=${dest}`).then(setPack).catch((e) => setError(e.message));
   }, [officeId, dest]);
+  const count = (f: (c: Control) => boolean) => pack?.controls.filter(f).length ?? 0;
 
   return (
     <>
       <div className="no-print">
-        <h1>Evidence pack</h1>
+        <div className="page-role">Evidence · what to show</div>
+        <h1>Evidence</h1>
         <p className="lead">
-          The same evidence, rendered for its reader. Each answer keeps how it was established and when. <Link to={`/offices/${officeId}/remediation`}>Findings and remediation</Link>
+          The answers a court or insurer asks for, each with what we found, how we know and when. Ready to print or send.{" "}
+          <Link to={`/offices/${officeId}/remediation`}>Action plan</Link>
         </p>
+        <div className="choices" style={{ marginBottom: "0.5rem" }}>
+          {DESTINATIONS.map(([k, label]) => (
+            <button key={k} className={dest === k ? "on" : ""} onClick={() => setDest(k)}>{label}</button>
+          ))}
+        </div>
+        <p className="muted" style={{ fontSize: "0.9em" }}>{DESTINATIONS.find(([k]) => k === dest)?.[2]}</p>
         <div className="row" style={{ marginBottom: "1rem" }}>
-          <select value={dest} onChange={(e) => setDest(e.target.value)} style={{ maxWidth: 280 }}>
-            {DESTINATIONS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
           <Export officeId={officeId} what="evidence-pack" query={`?destination=${dest}`} csv={false} />
           <button className="secondary" onClick={() => window.print()}>Print / Save as PDF</button>
         </div>
@@ -78,53 +85,60 @@ export default function Evidence() {
       {!pack && !error && <div className="muted">Loading…</div>}
       {pack && (
         <div className="card print-sheet">
-          <h2 style={{ marginTop: 0 }}>{pack.label}: {pack.office.name}</h2>
-          <p className="muted">
-            {pack.office.workspace} · {pack.office.office_type} · {pack.office.county}<br />
-            Evidence as of {day(pack.as_of)} · generated {new Date(pack.generated_at).toLocaleString()} by {pack.generated_by}
+          <h2 style={{ marginTop: 0 }}>{pack.label}</h2>
+          <p style={{ margin: "0 0 0.25rem", fontSize: "1.05rem" }}><strong>{pack.office.name}</strong> · {pack.office.office_type} · {pack.office.county}</p>
+          <p className="muted" style={{ marginTop: 0 }}>
+            {pack.office.workspace} · evidence as of {day(pack.as_of)} · prepared {new Date(pack.generated_at).toLocaleString()} by {pack.generated_by}
           </p>
-          <table>
-            <thead><tr><th>Control</th><th>Answer</th><th>What we found</th><th>How we know</th><th>Date</th></tr></thead>
-            <tbody>
-              {pack.controls.map((c) => (
-                <tr key={c.control}>
-                  <td>{c.control} {c.name}</td>
-                  <td><span className={`pill ${ANSWER_PILL[c.answer] ?? ""}`}>{c.answer}</span></td>
-                  <td>{c.evidence}</td>
-                  <td className="muted">{methodText(c.method)}</td>
-                  <td>{day(c.as_of)}</td>
-                </tr>
-              ))}
-              {pack.controls.length === 0 && <tr><td colSpan={5} className="muted">No scored scan yet.</td></tr>}
-            </tbody>
-          </table>
-          <div className="stats" style={{ marginTop: "1rem" }}>
-            <div className="stat good"><div className="n">{pack.controls.filter((c) => c.answer === "Yes").length}</div><div className="l">controls in place</div></div>
-            <div className="stat bad"><div className="n">{pack.controls.filter((c) => c.answer === "No").length}</div><div className="l">controls not in place</div></div>
-            <div className="stat warn"><div className="n">{pack.controls.filter((c) => c.answer.startsWith("Partial")).length}</div><div className="l">partly in place</div></div>
-            {pack.devices.total > 0 && (
-              <div className="stat"><div className="n">{pack.devices.edr_active} / {pack.devices.total}</div><div className="l">computers with active EDR</div></div>
-            )}
+
+          <div className="stats">
+            <div className="stat good"><div className="n">{count((c) => c.answer === "Yes")}</div><div className="l">answered Yes</div></div>
+            <div className="stat bad"><div className="n">{count((c) => c.answer === "No")}</div><div className="l">answered No</div></div>
+            <div className="stat warn"><div className="n">{count((c) => c.answer.startsWith("Partial"))}</div><div className="l">Partly</div></div>
+            <div className="stat quiet"><div className="n">{count((c) => !["Yes", "No"].includes(c.answer) && !c.answer.startsWith("Partial"))}</div><div className="l">not yet established</div></div>
           </div>
-          {dest === "management" && (
+
+          {pack.controls.map((c) => (
+            <div className="qa" key={c.control}>
+              <div className="q">{c.control}. {c.question}</div>
+              <div className="a"><span className={`pill ${ANSWER_PILL[c.answer] ?? ""}`}>{c.answer}</span></div>
+              <div className="found">{c.evidence}</div>
+              <div className="how">How we know: {methodText(c.method)} · {day(c.as_of)}</div>
+            </div>
+          ))}
+          {pack.controls.length === 0 && <p className="muted">No completed scan yet, so no answers can be given.</p>}
+
+          {dest === "management" ? (
             <>
-              <h3>What to fix ({pack.findings.length})</h3>
-              <p className="muted no-print" style={{ fontSize: "0.9em" }}>Press <strong>!</strong> on a finding for why it matters and the technical reference.</p>
-              {pack.findings.map((f) => <FindingCard key={f.key} f={f} />)}
+              <h3>How the fixes are going</h3>
+              {pack.plan.length === 0 ? (
+                <p>Nothing to fix in the current evidence.</p>
+              ) : (
+                <table>
+                  <thead><tr><th>Recommendation</th><th>Priority</th><th>Steps assigned</th><th>Next target</th></tr></thead>
+                  <tbody>
+                    {pack.plan.map((t) => (
+                      <tr key={t.title}>
+                        <td>{t.title}</td>
+                        <td><span className={`pill ${SEV_PILL[t.priority] ?? ""}`}>{SEV_LABEL[t.priority] ?? t.priority}</span></td>
+                        <td>{t.assigned} of {t.steps}</td>
+                        <td>{t.next_target ? day(t.next_target) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p>{pack.remediation.open} steps open, {pack.remediation.overdue} past their target date, {pack.remediation.closed} closed and confirmed by a later scan.</p>
             </>
+          ) : (
+            pack.remediation.open > 0 && (
+              <p>
+                Work in progress: {pack.remediation.open} improvement steps are assigned with owners and target dates; {pack.remediation.closed} have
+                been completed and confirmed by a later scan.
+              </p>
+            )
           )}
-          <h3>Remediation</h3>
-          <p>{pack.remediation.open} open, {pack.remediation.overdue} past target date, {pack.remediation.closed} closed on fresh evidence.</p>
-          {pack.remediation.items.length > 0 && (
-            <table>
-              <tbody>
-                {pack.remediation.items.map((i, n) => (
-                  <tr key={n}><td>{i.title}</td><td>{i.owner}</td><td>{i.status.replace("_", " ")}</td><td>{i.closed_reason ?? (i.target_date ? `target ${day(i.target_date)}` : "")}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          <p className="muted" style={{ marginTop: "1rem" }}>{pack.statement}</p>
+          <p className="muted" style={{ marginTop: "1rem", borderTop: "1px solid var(--line)", paddingTop: "0.75rem" }}>{pack.statement}</p>
         </div>
       )}
     </>

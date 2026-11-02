@@ -102,6 +102,7 @@ export default function Findings() {
 
   return (
     <>
+      <div className="page-role">Findings · what we checked</div>
       <h1>Microsoft 365 security checks</h1>
       <p className="lead">
         Your Microsoft 365 settings checked against the US government's security baseline (CISA SCuBA). "Must fix" items are required;

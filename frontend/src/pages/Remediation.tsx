@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow, post } from "../api";
-import { FindingCard } from "../components/Plain";
+import { FindingCard, SEV_LABEL, SEV_PILL } from "../components/Plain";
 import Export from "./Export";
 
 type Item = { id: string; status: string; owner: string; target_date: string | null };
@@ -51,7 +51,7 @@ export function RemediationPicker() {
   }, []);
   return (
     <>
-      <h1>Remediation</h1>
+      <h1>Action plan</h1>
       <p className="lead">Choose an office.</p>
       <table>
         <tbody>
@@ -84,7 +84,7 @@ function TrackForm({ officeId, f, done }: { officeId: string; f: Finding; done: 
     <form className="row" onSubmit={submit} style={{ marginTop: "0.4rem" }}>
       <input required placeholder="Owner (IT team, MSP, a name)" value={owner} onChange={(e) => setOwner(e.target.value)} style={{ maxWidth: 240 }} />
       <input type="date" aria-label="Target date" value={target} onChange={(e) => setTarget(e.target.value)} style={{ maxWidth: 160 }} />
-      <button type="submit">Track</button>
+      <button type="submit">Assign</button>
       {error && <span className="error">{error}</span>}
     </form>
   );
@@ -212,11 +212,61 @@ function Notifications({ officeId }: { officeId: string }) {
   );
 }
 
+type Theme = { key: string; title: string; outcome: string; priority: string; steps: number; assigned: number; next_target: string | null; keys: string[] };
+
+function PlanCard({ n, t, findings, startOpen, officeId, reload }: { n: number; t: Theme; findings: Finding[]; startOpen: boolean; officeId: string; reload: () => void }) {
+  const [open, setOpen] = useState(startOpen);
+  const [assigning, setAssigning] = useState("");
+  const pct = Math.round((100 * t.assigned) / t.steps);
+  return (
+    <div className={`plan ${t.priority}`}>
+      <div className="ph">
+        <div className="step">{n}</div>
+        <div style={{ flex: 1 }}>
+          <div className="row" style={{ gap: "0.5rem" }}>
+            <h3>{t.title}</h3>
+            <span className={`pill ${SEV_PILL[t.priority] ?? ""}`}>{SEV_LABEL[t.priority] ?? t.priority}</span>
+          </div>
+          <p className="outcome">When done: {t.outcome}</p>
+          <div className="bar"><span style={{ width: `${pct}%` }} /></div>
+          <div className="muted" style={{ fontSize: "0.85em" }}>
+            {t.assigned} of {t.steps} step{t.steps === 1 ? "" : "s"} assigned{t.next_target ? ` · next target ${day(t.next_target)}` : ""}
+          </div>
+        </div>
+        <button className="secondary" onClick={() => setOpen(!open)}>{open ? "Hide steps" : `Show ${t.steps} step${t.steps === 1 ? "" : "s"}`}</button>
+      </div>
+      {open && (
+        <div className="items">
+          {findings.map((f) => (
+            <div key={f.key}>
+              <FindingCard
+                f={f}
+                side={
+                  f.item ? (
+                    <span className="pill">{COLUMNS.find(([k]) => k === f.item!.status)?.[1]} · {f.item.owner}</span>
+                  ) : assigning === f.key ? null : (
+                    <button className="secondary" onClick={() => setAssigning(f.key)}>Assign</button>
+                  )
+                }
+              />
+              {assigning === f.key && (
+                <div className="card" style={{ marginTop: "-0.4rem" }}>
+                  <TrackForm officeId={officeId} f={f} done={() => { setAssigning(""); reload(); }} />
+                  <button className="secondary" style={{ marginTop: "0.4rem" }} onClick={() => setAssigning("")}>Cancel</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Remediation() {
   const { officeId = "" } = useParams();
-  const [reg, setReg] = useState<{ findings: Finding[]; counts: Record<string, number>; tracked: number } | null>(null);
+  const [reg, setReg] = useState<{ findings: Finding[]; counts: Record<string, number>; tracked: number; themes: Theme[] } | null>(null);
   const [items, setItems] = useState<Tracked[]>([]);
-  const [tracking, setTracking] = useState("");
   const [error, setError] = useState("");
   const load = () => {
     api<typeof reg>(`/api/offices/${officeId}/register`).then(setReg).catch((e) => setError(e.message));
@@ -226,50 +276,41 @@ export default function Remediation() {
 
   return (
     <>
-      <h1>Findings and remediation</h1>
+      <div className="page-role">Action plan · what to do</div>
+      <h1>Action plan</h1>
       <p className="lead">
-        Each problem we found, in plain words, with what to do about it. Assign one to give it an owner and a target date. Work is done in your own tools; an
-        item closes only when the next scan, import or collector run no longer shows the finding. <Link to={`/offices/${officeId}/evidence`}>Evidence pack</Link>
+        Recommendations, most urgent first. Each one groups the problems it fixes into steps. Assign a step to give it an owner and a target
+        date; it closes by itself when the next scan no longer shows the problem. <Link to={`/offices/${officeId}/findings`}>All checks</Link>
+        {" · "}<Link to={`/offices/${officeId}/evidence`}>Evidence</Link>
       </p>
       {error && <div className="error">{error}</div>}
-
-      <div className="row" style={{ justifyContent: "space-between" }}>
-        <h2>What to fix {reg && <span className="muted">({reg.findings.length})</span>}</h2>
-        <Export officeId={officeId} what="findings" />
-      </div>
       {reg && reg.findings.length > 0 && (
         <div className="stats">
-          <div className="stat bad"><div className="n">{reg.findings.filter((f) => f.severity === "Mandatory").length}</div><div className="l">must fix</div></div>
-          <div className="stat warn"><div className="n">{reg.findings.filter((f) => f.severity === "High").length}</div><div className="l">important</div></div>
-          <div className="stat"><div className="n">{reg.findings.filter((f) => f.item).length}</div><div className="l">being worked on</div></div>
-          <div className="stat quiet"><div className="n">{reg.findings.filter((f) => !f.item).length}</div><div className="l">not yet assigned</div></div>
+          <div className="stat bad"><div className="n">{reg.themes.length}</div><div className="l">recommendations</div></div>
+          <div className="stat"><div className="n">{reg.findings.length}</div><div className="l">steps in total</div></div>
+          <div className="stat good"><div className="n">{reg.findings.filter((f) => f.item).length}</div><div className="l">assigned</div></div>
+          <div className="stat warn"><div className="n">{reg.findings.filter((f) => !f.item).length}</div><div className="l">waiting for an owner</div></div>
+          <div className="stat bad"><div className="n">{items.filter((i) => i.overdue).length}</div><div className="l">past target date</div></div>
         </div>
       )}
-      <p className="muted" style={{ fontSize: "0.9em" }}>Press <strong>!</strong> on any finding for why it matters, how we know, and the technical reference for IT.</p>
-      {reg?.findings.map((f) => (
-        <FindingCard
-          key={f.key}
-          f={f}
-          side={
-            f.item ? (
-              <span className="pill">{COLUMNS.find(([k]) => k === f.item!.status)?.[1]} · {f.item.owner}</span>
-            ) : tracking === f.key ? null : (
-              <button className="secondary" onClick={() => setTracking(f.key)}>Assign</button>
-            )
-          }
+      <div className="row no-print" style={{ justifyContent: "flex-end", marginBottom: "0.5rem" }}>
+        <Export officeId={officeId} what="findings" />
+      </div>
+      {reg?.themes.map((t, n) => (
+        <PlanCard
+          key={t.key}
+          n={n + 1}
+          t={t}
+          findings={reg.findings.filter((f) => t.keys.includes(f.key))}
+          startOpen={n === 0}
+          officeId={officeId}
+          reload={load}
         />
       ))}
-      {tracking && reg?.findings.find((f) => f.key === tracking) && (
-        <div className="card">
-          <strong>Assign: {reg.findings.find((f) => f.key === tracking)!.title}</strong>
-          <TrackForm officeId={officeId} f={reg.findings.find((f) => f.key === tracking)!} done={() => { setTracking(""); load(); }} />
-          <button className="secondary" style={{ marginTop: "0.4rem" }} onClick={() => setTracking("")}>Cancel</button>
-        </div>
-      )}
-      {reg?.findings.length === 0 && <div className="banner good">No findings in the current evidence.</div>}
+      {reg?.findings.length === 0 && <div className="banner good">Nothing to fix in the current evidence.</div>}
 
       <div className="row" style={{ justifyContent: "space-between", marginTop: "1.5rem" }}>
-        <h2>Remediation board</h2>
+        <h2>Progress board</h2>
         <Export officeId={officeId} what="remediation" />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "0.75rem" }}>

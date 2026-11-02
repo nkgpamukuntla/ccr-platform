@@ -88,7 +88,32 @@ def register(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["severity"]] = counts.get(r["severity"], 0) + 1
-    return {"findings": rows, "counts": counts, "tracked": sum(1 for r in rows if r["item"])}
+    return {"findings": rows, "counts": counts, "tracked": sum(1 for r in rows if r["item"]), "themes": _plan(rows)}
+
+
+def _plan(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Findings grouped into recommendations, most urgent first."""
+    order = {"Mandatory": 0, "High": 1, "Medium": 2}
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        groups.setdefault(r["theme"] or "monitor", []).append(r)
+    out = []
+    for key, rs in groups.items():
+        title, outcome = plain.THEMES.get(key, (key, ""))
+        targets = sorted(str(r["item"]["target_date"]) for r in rs if r["item"] and r["item"].get("target_date"))
+        out.append(
+            {
+                "key": key,
+                "title": title,
+                "outcome": outcome,
+                "priority": min((r["severity"] for r in rs), key=lambda s: order.get(s, 9)),
+                "steps": len(rs),
+                "assigned": sum(1 for r in rs if r["item"]),
+                "next_target": targets[0] if targets else None,
+                "keys": [r["key"] for r in rs],
+            }
+        )
+    return sorted(out, key=lambda t: (order.get(t["priority"], 9), -t["steps"]))
 
 
 class NewItem(BaseModel):
@@ -204,6 +229,7 @@ def _pack(conn: Any, office_id: UUID, destination: str, user_email: str) -> dict
                 {
                     "control": c["control"],
                     "name": c["name"],
+                    "question": plain.QUESTION.get(c["control"], c["name"]),
                     "answer": answer,
                     "state": c["state"],
                     "evidence": _evidence_text(c),
@@ -241,6 +267,7 @@ def _pack(conn: Any, office_id: UUID, destination: str, user_email: str) -> dict
             "items": [{k: i[k] for k in ("title", "owner", "status", "target_date", "closed_reason")} for i in its],
         },
         "devices": {"total": len(devs), "edr_active": sum(1 for d in devs if d["edr"] == "active")},
+        "plan": [{k: t[k] for k in ("title", "priority", "steps", "assigned", "next_target")} for t in _plan(reg)],
         "statement": f"Prepared from read-only evidence; each answer keeps its source and date. {submitter}; "
         "the platform never files on anyone's behalf.",
     }

@@ -259,3 +259,72 @@ def summary(c: dict[str, Any]) -> str:
         return answer(c) or "The evidence shows this is in place."
     words = control(c["control"], c["state"])
     return answer(c) or (words[0] + "." if words else "")
+
+
+# Remediation groups findings into a few recommendations, each an outcome a manager can assign.
+THEMES: dict[str, tuple[str, str]] = {
+    "mfa": (
+        "Require a second check (MFA) for everyone",
+        "A stolen password alone is no longer enough to get in, for staff, guests and vendors.",
+    ),
+    "admins": (
+        "Lock down administrator accounts",
+        "Admin accounts become much harder to take over, and every use of admin rights is visible.",
+    ),
+    "signin": (
+        "Block risky and outdated sign-ins",
+        "Sign-ins that look like an attacker, and old methods that skip MFA, are stopped.",
+    ),
+    "devices": ("Protect every computer", "Every computer runs a working EDR agent on a supported version of Windows."),
+    "backups": ("Protect the backups", "Backups cannot be reached or deleted with a stolen password."),
+    "apps": ("Control apps and guest access", "Outside apps and guests cannot quietly get access to company data."),
+    "monitor": ("Make sure someone sees the warning signs", "Security alerts and logs reach the people who watch for attacks."),
+}
+_THEME_OF = {
+    "control:1": "mfa",
+    "control:2": "mfa",
+    "control:3": "admins",
+    "control:4": "backups",
+    "MS.AAD.1.1v1": "signin",
+    "MS.AAD.2.1v1": "signin",
+    "MS.AAD.2.2v1": "monitor",
+    "MS.AAD.2.3v1": "signin",
+    "MS.AAD.3.1v1": "mfa",
+    "MS.AAD.3.2v1": "mfa",
+    "MS.AAD.3.3v2": "mfa",
+    "MS.AAD.3.4v1": "mfa",
+    "MS.AAD.3.5v1": "mfa",
+    "MS.AAD.3.6v1": "admins",
+    "MS.AAD.3.7v1": "signin",
+    "MS.AAD.3.8v1": "signin",
+    "MS.AAD.3.9v1": "signin",
+    "MS.AAD.4.1v1": "monitor",
+    "MS.AAD.6.1v1": "mfa",
+}
+
+
+def theme(key: str) -> str:
+    """The recommendation a finding belongs to."""
+    if key.startswith("device:"):
+        return "devices"
+    k = key.removeprefix("scuba:")
+    if k in _THEME_OF:
+        return _THEME_OF[k]
+    if k.startswith(("MS.AAD.7.",)):
+        return "admins"
+    if k.startswith(("MS.AAD.5.", "MS.AAD.8.")):
+        return "apps"
+    return "monitor"
+
+
+# Evidence asks each control as the question a court or insurer would.
+QUESTION = {
+    1: "Is MFA required when staff sign in remotely?",
+    2: "Is MFA required for vendors, guests and IT providers?",
+    3: "Are administrator accounts protected with MFA?",
+    4: "Is MFA required to reach the backups?",
+    5: "Does every computer run an active EDR agent?",
+    6: "Are backups kept separate from the main network?",
+    7: "Is there a tested disaster recovery plan?",
+    8: "Do staff receive phishing awareness training?",
+}
