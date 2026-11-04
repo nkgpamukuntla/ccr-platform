@@ -258,3 +258,33 @@ def test_granted_roles_from_token_payload() -> None:
     body = base64.urlsafe_b64encode(json.dumps({"roles": ["User.Read.All", "Policy.Read.All"]}).encode()).decode().rstrip("=")
     assert granted_roles(f"h.{body}.s") == ["Policy.Read.All", "User.Read.All"]
     assert granted_roles("not-a-jwt") == [] and granted_roles("token") == []
+
+
+def test_usage_report_csv_redirect_is_followed_and_parsed() -> None:
+    import httpx
+
+    from app.microsoft import graph
+
+    csv_text = (
+        "\ufeffReport Refresh Date,User Principal Name,Exchange Last Activity Date,Teams Last Activity Date\n"
+        "2026-11-03,a@lab.org,2026-11-01,\n"
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "graph.microsoft.com":
+            assert request.headers["Authorization"] == "Bearer t"
+            return httpx.Response(302, headers={"location": "https://reports.office.com/data.csv?sig=x"})
+        assert "Authorization" not in request.headers  # the pre-signed link never gets the token
+        return httpx.Response(200, text=csv_text, headers={"content-type": "application/octet-stream"})
+
+    read = next(r for r in graph.READS if r.name == "usage_30d")
+    out = graph.fetch(httpx.Client(transport=httpx.MockTransport(handler)), "t", read)
+    assert out["status"] == 200
+    assert graph.items(out) == [
+        {
+            "reportRefreshDate": "2026-11-03",
+            "userPrincipalName": "a@lab.org",
+            "exchangeLastActivityDate": "2026-11-01",
+            "teamsLastActivityDate": "",
+        }
+    ]

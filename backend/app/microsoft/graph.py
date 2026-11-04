@@ -6,6 +6,8 @@ Microsoft returns at each licensing level is itself the evidence, and an unobser
 withholds any adverse result that depends on it.
 """
 
+import csv
+import io
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,7 +72,7 @@ READS = [
     ),  # 120 is the most per page
     Read(
         "usage_30d",
-        "/beta/reports/getOffice365ActiveUserDetail(period='D30')?$format=application/json",
+        "/v1.0/reports/getOffice365ActiveUserDetail(period='D30')",  # answers with a redirect to a CSV
         "Reports.Read.All",
     ),
 ]
@@ -88,12 +90,15 @@ def fetch(http: httpx.Client, token: str, read: Read) -> dict[str, Any]:
     headers: dict[str, str] = {}
     while url and len(pages) < read.max_pages:
         r = http.get(url, headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}, timeout=60)
+        if r.status_code == 302 and r.headers.get("location", "").startswith("https://"):
+            # Usage reports hand back a short-lived, pre-signed CSV link; it needs no token.
+            r = http.get(r.headers["location"], timeout=60)
         status = r.status_code
         headers = {k: v for k, v in r.headers.items() if k.lower() in KEEP_HEADERS}
         try:
             body = r.json()
         except ValueError:
-            body = {"_non_json": r.text[:2000]}
+            body = csv_rows(r.text) if status == 200 else {"_non_json": r.text[:2000]}
         pages.append(body)
         url = body.get("@odata.nextLink") if status == 200 and isinstance(body, dict) else None
     return {
@@ -104,6 +109,17 @@ def fetch(http: httpx.Client, token: str, read: Read) -> dict[str, Any]:
         "headers": headers,
         "pages": pages,
     }
+
+
+def csv_rows(text: str) -> dict[str, Any]:
+    """A report CSV as {"value": [...]}, headers in Graph's JSON style ("User Principal Name" -> userPrincipalName)."""
+
+    def key(h: str) -> str:
+        words = h.replace("\ufeff", "").strip().split()
+        return (words[0].lower() + "".join(w[:1].upper() + w[1:] for w in words[1:])) if words else h
+
+    rows = list(csv.DictReader(io.StringIO(text.lstrip("\ufeff"))))
+    return {"value": [{key(k): v for k, v in row.items() if k} for row in rows]}
 
 
 def items(entry: dict[str, Any]) -> list[dict[str, Any]]:
