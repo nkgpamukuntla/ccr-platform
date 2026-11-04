@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, OfficeRow, post } from "../api";
-import { useMe } from "../App";
+import { useMe, useOrg } from "../App";
 
 type Workspace = { id: string; name: string; kind: "courts" | "organization"; industry: string | null; offices: number };
 
@@ -13,6 +13,7 @@ export function scanText(r: { collect_at: string; time_zone: string; next_scan: 
 
 export default function Offices() {
   const me = useMe();
+  const { org, pickOrg } = useOrg();
   const [rows, setRows] = useState<OfficeRow[] | null>(null);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [types, setTypes] = useState<string[]>([]);
@@ -29,6 +30,10 @@ export default function Offices() {
       if (w.length) setForm((f) => ({ ...f, workspace_id: f.workspace_id || w[0].id }));
     });
   }, []);
+
+  useEffect(() => {
+    if (org) setForm((f) => ({ ...f, workspace_id: org }));
+  }, [org]);
 
   const ws = workspaces.find((w) => w.id === form.workspace_id);
   const kind = ws?.kind ?? "courts";
@@ -56,27 +61,61 @@ export default function Offices() {
     return 6;
   };
 
-  const groups: [string, OfficeRow[]][] = [];
-  for (const r of rows ?? []) {
-    const g = groups.find(([name]) => name === r.workspace);
-    if (g) g[1].push(r);
-    else groups.push([r.workspace, [r]]);
+  const current = workspaces.find((w) => w.id === org);
+  const list = (rows ?? []).filter((r) => r.workspace_id === org);
+
+  if (!current) {
+    // Step one: choose the organisation.
+    return (
+      <>
+        <div className="page-role">Home</div>
+        <h1>Organisations</h1>
+        <p className="lead">Choose an organisation to see its offices. Each office is onboarded and consents on its own.</p>
+        {error && <div className="error">{error}</div>}
+        <div className="controls">
+          {workspaces.map((w) => {
+            const mine = (rows ?? []).filter((r) => r.workspace_id === w.id);
+            const live = mine.filter((r) => r.live_at).length;
+            return (
+              <button key={w.id} className="org-card" onClick={() => pickOrg(w.id)}>
+                <span className="cc">{w.kind === "courts" ? "Courts" : w.industry || "Organisation"}</span>
+                <strong>{w.name}</strong>
+                <span className="muted">
+                  {mine.length} office{mine.length === 1 ? "" : "s"}{live ? ` · ${live} live` : ""}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {workspaces.length === 0 && <p className="muted">No organisations yet. Ask a platform administrator to add yours.</p>}
+        {me.is_admin && (
+          <p className="muted" style={{ marginTop: "1rem" }}>
+            New customer? Create the organisation under <Link to="/workspaces">Organisations</Link>, then add its offices here.
+          </p>
+        )}
+      </>
+    );
   }
 
   return (
     <>
-      <h1>Governed offices</h1>
+      <div className="page-role">Home · {current.name}</div>
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>{current.name}</h1>
+        <button className="secondary" onClick={() => pickOrg("")}>All organisations</button>
+      </div>
       <p className="lead">
-        Consent is per governed office, so a clerk and a sheriff in one county onboard separately. Offices sit in workspaces: the Georgia courts,
-        or an organisation onboarded on its own.
+        {current.kind === "courts"
+          ? "Consent is per governed office, so a clerk and a sheriff in one county onboard separately."
+          : "Each office or unit onboards and consents on its own."}{" "}
+        Choose an office to work on it; it stays selected as you move between pages.
       </p>
       {error && <div className="error">{error}</div>}
-      {rows?.length === 0 && (
+      {list.length === 0 && (
         <p className="muted">No offices yet.{me.is_admin ? " Add the first one below." : " Ask a platform administrator to add yours."}</p>
       )}
-      {groups.map(([name, list]) => (
-        <div key={name} style={{ marginBottom: "1.5rem" }}>
-          <h2>{name}</h2>
+      {list.length > 0 && (
+        <div style={{ marginBottom: "1.5rem" }}>
           <table>
             <thead>
               <tr>
@@ -102,7 +141,7 @@ export default function Offices() {
                     <Link to={`/offices/${r.id}/onboarding/${nextStep(r)}`}>{r.live_at ? "Review" : "Continue"}</Link>
                     <Link to={`/offices/${r.id}/posture`}>Posture</Link>
                     <Link to={`/offices/${r.id}/findings`}>Findings</Link>
-                    <Link to={`/offices/${r.id}/remediation`}>Remediation</Link>
+                    <Link to={`/offices/${r.id}/remediation`}>Action plan</Link>
                     <Link to={`/offices/${r.id}/evidence`}>Evidence</Link>
                     <Link to={`/offices/${r.id}/devices`}>Devices</Link>
                     <Link to={`/offices/${r.id}/members`}>Members</Link>
@@ -113,18 +152,11 @@ export default function Offices() {
             </tbody>
           </table>
         </div>
-      ))}
+      )}
 
       {me.is_admin && (
         <form className="card" onSubmit={create} style={{ marginTop: "1.5rem" }}>
-          <h2 style={{ marginTop: 0 }}>Add an office</h2>
-          <label htmlFor="ws">Workspace</label>
-          <select id="ws" value={form.workspace_id} onChange={(e) => setForm({ ...form, workspace_id: e.target.value })}>
-            {workspaces.map((w) => (
-              <option key={w.id} value={w.id}>{w.name}</option>
-            ))}
-          </select>
-          <p className="muted">New customer or industry? Create its workspace first under <Link to="/workspaces">Workspaces</Link>.</p>
+          <h2 style={{ marginTop: 0 }}>Add an office to {current.name}</h2>
           <label htmlFor="name">{kind === "courts" ? "Office name" : "Office or unit name"}</label>
           <input id="name" type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={kind === "courts" ? "Bulloch County — Clerk of Superior Court" : "Head office IT"} />
           <label htmlFor="type">Office type</label>

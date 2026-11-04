@@ -80,7 +80,7 @@ function Viewers({ id }: { id: string }) {
   };
   return (
     <>
-      <h3>Workspace viewers (read-only, every office in this workspace)</h3>
+      <h3>Organisation viewers (read-only, every office in this organisation)</h3>
       <table>
         <tbody>
           {rows.map((v) => (
@@ -123,14 +123,14 @@ export default function Workspaces() {
 
   return (
     <>
-      <h1>Workspaces</h1>
+      <h1>Organisations</h1>
       <p className="lead">
         One workspace per customer or programme: the Georgia courts, D-Biz itself, or any other organisation. Offices belong to one workspace, and a
         workspace viewer sees only that workspace.
       </p>
       {error && <div className="error">{error}</div>}
       <table>
-        <thead><tr><th>Workspace</th><th>Kind</th><th>Industry</th><th>Offices</th></tr></thead>
+        <thead><tr><th>Organisation</th><th>Kind</th><th>Industry</th><th>Offices</th></tr></thead>
         <tbody>
           {rows.map((w) => (
             <tr key={w.id}>
@@ -148,13 +148,13 @@ export default function Workspaces() {
           <h2 style={{ marginTop: 0 }}>{current.name}</h2>
           <WorkspaceSummary id={current.id} />
           {me.is_admin && <Viewers id={current.id} />}
-          <p><Link to="/offices">Offices in all workspaces</Link></p>
+          <p><Link to="/offices">All organisations</Link></p>
         </div>
       )}
 
       {me.is_admin && (
         <form className="card" onSubmit={create} style={{ marginTop: "1.5rem" }}>
-          <h2 style={{ marginTop: 0 }}>Add a workspace</h2>
+          <h2 style={{ marginTop: 0 }}>Add an organisation</h2>
           <label htmlFor="wn">Name</label>
           <input id="wn" type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="D-Biz Solutions" />
           <label htmlFor="wk">Kind</label>
@@ -164,7 +164,7 @@ export default function Workspaces() {
           </select>
           <label htmlFor="wi">Industry</label>
           <input id="wi" type="text" value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} placeholder="IT services" />
-          <div style={{ marginTop: "1rem" }}><button type="submit">Add workspace</button></div>
+          <div style={{ marginTop: "1rem" }}><button type="submit">Add organisation</button></div>
         </form>
       )}
     </>

@@ -19,19 +19,23 @@ import logo from "./dbiz-logo.svg";
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
 
-// The office being looked at, kept while moving between sections (and across visits, per browser).
+// The organisation and office being looked at, kept while moving between sections (and across visits, per browser).
 const OfficeContext = createContext<string>("");
+type Org = { id: string; name: string; kind: string };
+const OrgContext = createContext<{ org: string; orgs: Org[]; pickOrg: (id: string) => void }>({ org: "", orgs: [], pickOrg: () => {} });
+export const useOrg = () => useContext(OrgContext);
 const KEY = "ccr.office";
-const remember = (id: string) => {
+const ORG_KEY = "ccr.org";
+const remember = (id: string, key = KEY) => {
   try {
-    localStorage.setItem(KEY, id);
+    localStorage.setItem(key, id);
   } catch {
     /* storage unavailable: the choice lasts for this visit only */
   }
 };
-const recall = () => {
+const recall = (key = KEY) => {
   try {
-    return localStorage.getItem(KEY) ?? "";
+    return localStorage.getItem(key) ?? "";
   } catch {
     return "";
   }
@@ -49,16 +53,29 @@ const SECTIONS = [
 ] as const;
 
 function OfficeSwitcher({ offices, current, onPick }: { offices: OfficeRow[]; current: string; onPick: (id: string) => void }) {
-  if (offices.length === 0) return null;
+  const { org, orgs, pickOrg } = useOrg();
+  if (orgs.length === 0) return null;
+  const mine = offices.filter((o) => o.workspace_id === org);
   return (
     <div className="switcher">
-      <label htmlFor="office-pick">Office</label>
-      <select id="office-pick" value={current} onChange={(e) => onPick(e.target.value)}>
-        {!current && <option value="">Choose an office…</option>}
-        {offices.map((o) => (
+      <label htmlFor="org-pick">Organisation</label>
+      <select id="org-pick" value={org} onChange={(e) => pickOrg(e.target.value)}>
+        {!org && <option value="">Choose an organisation…</option>}
+        {orgs.map((o) => (
           <option key={o.id} value={o.id}>{o.name}</option>
         ))}
       </select>
+      {org && (
+        <>
+          <label htmlFor="office-pick" style={{ marginTop: "0.5rem" }}>Office</label>
+          <select id="office-pick" value={mine.some((o) => o.id === current) ? current : ""} onChange={(e) => onPick(e.target.value)}>
+            {!mine.some((o) => o.id === current) && <option value="">{mine.length ? "Choose an office…" : "No offices yet"}</option>}
+            {mine.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </>
+      )}
     </div>
   );
 }
@@ -73,6 +90,8 @@ export default function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [offices, setOffices] = useState<OfficeRow[]>([]);
   const [office, setOffice] = useState(recall());
+  const [org, setOrg] = useState(recall(ORG_KEY));
+  const [orgs, setOrgs] = useState<Org[]>([]);
   const [error, setError] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
@@ -80,7 +99,19 @@ export default function App() {
   useEffect(() => {
     api<Me>("/api/me").then(setMe).catch((e) => setError(String(e.message)));
     api<OfficeRow[]>("/api/offices").then(setOffices).catch(() => setOffices([]));
+    api<Org[]>("/api/workspaces").then(setOrgs).catch(() => setOrgs([]));
   }, []);
+
+  // The organisation follows the office: an office belongs to exactly one.
+  const chooseOrg = (id: string) => {
+    setOrg(id);
+    remember(id, ORG_KEY);
+  };
+  useEffect(() => {
+    const o = offices.find((x) => x.id === office);
+    if (o && o.workspace_id !== org) chooseOrg(o.workspace_id);
+    else if (!org && orgs.length === 1) chooseOrg(orgs[0].id);
+  }, [office, offices, orgs]);
 
   // Opening any office page selects that office.
   const inPath = matchPath("/offices/:officeId/*", location.pathname)?.params.officeId ?? "";
@@ -103,6 +134,19 @@ export default function App() {
     }
   }, [offices]);
 
+  const pickOrg = (id: string) => {
+    chooseOrg(id);
+    if (offices.find((x) => x.id === office)?.workspace_id === id) return;
+    const mine = offices.filter((x) => x.workspace_id === id);
+    if (mine.length === 1) {
+      pick(mine[0].id);
+    } else {
+      setOffice("");
+      remember("");
+      navigate("/offices");
+    }
+  };
+
   const pick = (id: string) => {
     setOffice(id);
     remember(id);
@@ -116,6 +160,7 @@ export default function App() {
   return (
     <MeContext.Provider value={me}>
       <OfficeContext.Provider value={office}>
+       <OrgContext.Provider value={{ org, orgs, pickOrg }}>
         <div className="shell">
           <aside className="nav">
             <div className="brand">
@@ -126,14 +171,14 @@ export default function App() {
               </span>
             </div>
             <OfficeSwitcher offices={offices} current={office} onPick={pick} />
-            <NavLink to="/offices" end>Onboarding</NavLink>
+            <NavLink to="/offices" end>Home</NavLink>
             {SECTIONS.map(([s, label, hint]) => (
               <NavLink key={s} to={office ? `/offices/${office}/${s}` : `/${s}`} title={hint}>
                 {label}
               </NavLink>
             ))}
             {me.viewer_workspaces.some((w) => w.kind === "courts") && <NavLink to="/aoc">AOC view</NavLink>}
-            {(me.is_admin || me.viewer_workspaces.length > 0) && <NavLink to="/workspaces">Workspaces</NavLink>}
+            {(me.is_admin || me.viewer_workspaces.length > 0) && <NavLink to="/workspaces">Organisations</NavLink>}
             {me.is_admin && <NavLink to="/users">Users</NavLink>}
             <div className="nav-foot">
               <div className="who">{me.email}</div>
@@ -170,6 +215,7 @@ export default function App() {
             </Routes>
           </main>
         </div>
+       </OrgContext.Provider>
       </OfficeContext.Provider>
     </MeContext.Provider>
   );

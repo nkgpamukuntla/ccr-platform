@@ -70,6 +70,7 @@ export type OfficeRow = {
   profile: string | null;
   completed_steps: number[];
   live_at: string | null;
+  workspace_id: string;
   workspace: string;
   workspace_kind: "courts" | "organization";
   time_zone: string;
