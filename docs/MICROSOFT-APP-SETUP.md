@@ -31,6 +31,14 @@ public certificate is uploaded here. No client secret is ever created.
 | `AuditLog.Read.All` | The authentication-method registration report only | Every sign-in and directory audit record |
 | `Device.Read.All` | Devices | Every property of every device object, read-only |
 | `LicenseAssignment.Read.All` | Subscribed SKUs | Licence assignments for users and groups |
+| `DeviceManagementManagedDevices.Read.All` | Intune managed devices: name, serial, OS, compliance, whether the disk is encrypted, last check-in | Other managed-device properties, read-only. **Not** BitLocker recovery keys (that needs `BitlockerKey.Read.All`, never requested) |
+| `DeviceManagementConfiguration.Read.All` | Intune compliance policies (names only) | Other Intune configuration profiles, read-only |
+| `SecurityEvents.Read.All` | Microsoft Secure Score and its improvement actions | Security alerts, read-only |
+
+Added in November 2026 for the country frameworks. An office that consented earlier keeps scanning
+unchanged; the four reads show "Not checked yet" until its administrator grants consent again
+(onboarding step 4 shows the button). Email SPF/DMARC/DKIM checks use public DNS and need no permission.
+The SCuBA (ScubaGear) Entra collection adds the read-only scopes listed in `scripts/register_microsoft_app.py`.
 
 Each is the least-privileged permission its endpoint's documentation names (handover section 7).
 

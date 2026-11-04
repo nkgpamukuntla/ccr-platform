@@ -22,6 +22,7 @@ class Read:
     name: str
     path: str
     permission: str
+    max_pages: int = MAX_PAGES
 
 
 READS = [
@@ -41,9 +42,25 @@ READS = [
         "Device.Read.All",
     ),
     Read("subscribed_skus", "/v1.0/subscribedSkus", "LicenseAssignment.Read.All"),
+    Read("domains", "/v1.0/domains?$select=id,isVerified,isDefault,supportedServices", "Directory.Read.All"),
+    # Intune: the real list of managed computers, their encryption and compliance (needs an Intune licence).
+    Read(
+        "managed_devices",
+        "/v1.0/deviceManagement/managedDevices?$select=id,deviceName,operatingSystem,osVersion,complianceState,isEncrypted,"
+        "lastSyncDateTime,managedDeviceOwnerType,serialNumber,enrolledDateTime",
+        "DeviceManagementManagedDevices.Read.All",
+    ),
+    Read(
+        "compliance_policies",
+        "/v1.0/deviceManagement/deviceCompliancePolicies?$select=id,displayName,lastModifiedDateTime",
+        "DeviceManagementConfiguration.Read.All",
+    ),
+    # Microsoft Secure Score: the newest daily score only, and the actions it is made of.
+    Read("secure_scores", "/v1.0/security/secureScores?$top=1", "SecurityEvents.Read.All", max_pages=1),
+    Read("secure_score_profiles", "/v1.0/security/secureScoreControlProfiles", "SecurityEvents.Read.All"),
 ]
 
-# Our seven reads plus what ScubaGear's Entra collection needs (app/scuba/aad.py); all read-only.
+# Our reads plus what ScubaGear's Entra collection needs (app/scuba/aad.py); all read-only.
 PERMISSIONS = sorted({r.permission for r in READS} | set(_SCUBA_AAD_PERMISSIONS))
 KEEP_HEADERS = ("request-id", "client-request-id", "date", "x-ms-ags-diagnostic")
 
@@ -54,7 +71,7 @@ def fetch(http: httpx.Client, token: str, read: Read) -> dict[str, Any]:
     pages: list[Any] = []
     status = 0
     headers: dict[str, str] = {}
-    while url and len(pages) < MAX_PAGES:
+    while url and len(pages) < read.max_pages:
         r = http.get(url, headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}, timeout=60)
         status = r.status_code
         headers = {k: v for k, v in r.headers.items() if k.lower() in KEEP_HEADERS}

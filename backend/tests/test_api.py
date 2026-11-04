@@ -608,13 +608,15 @@ def test_workspaces_types_schedule_and_viewers(client: Any) -> None:
     assert client.get("/api/offices", headers=ciso).json() == []
 
 
-def _collect_and_score(oid: str, tenant: str) -> None:
+def _collect_and_score(
+    oid: str, tenant: str, extra: list[dict[str, Any]] | None = None, dns: dict[str, Any] | None = None
+) -> None:
     """One worker collection (ec_worker) and evaluation (ec_evaluator) for an office, as in production."""
     from tests.test_microsoft import bundle as make_bundle
     from tests.test_microsoft import policy
 
     regs = [{"userPrincipalName": "admin@lab", "isAdmin": True, "isMfaRegistered": True, "methodsRegistered": ["mobilePhone"]}]
-    reads = make_bundle(ca=[policy("Require MFA", state="enabledForReportingButNotEnforced")], regs=regs)["reads"]
+    reads = make_bundle(ca=[policy("Require MFA", state="enabledForReportingButNotEnforced")], regs=regs)["reads"] + (extra or [])
     stored: dict[str, bytes] = {}
 
     class FakeS3:
@@ -644,6 +646,7 @@ def _collect_and_score(oid: str, tenant: str) -> None:
             mock.patch("app.worker.boto3.client", return_value=FakeS3()),
             mock.patch("app.worker.scuba_aad.LiveGraph", return_value=mock.Mock(responses={})),
             mock.patch("app.worker.scuba_aad.build_provider"),
+            mock.patch("app.worker.email_dns.lookup", return_value=dns or {}),
         ):
             assert worker.collect_one(s, mock.Mock(), mock.Mock(), oid, tenant, "fp") == "collected"
         _as_role("ec_evaluator")
@@ -803,3 +806,59 @@ def test_scan_report_lists_changes_since_previous_scan() -> None:
     assert "02 Nov 2026 18:10 IST" in body and "MFA: Met  (was Gap)" in body
     assert "New (1):" in body and "Resolved (1):" in body and "3 devices stale  ->  1 devices stale" in body
     assert "previous scan 10 devices, 8 active" in body
+
+
+def test_compliance_by_country_with_intune_and_email(client: Any) -> None:
+    """New reads land as findings and framework evidence; items stay open when a source goes unread."""
+    from tests.test_compliance import MANAGED, dkim, txt
+    from tests.test_microsoft import read
+
+    oid = client.post(
+        "/api/offices",
+        headers=ADMIN,
+        json={"name": "Sydney office", "office_type": "County IT", "county": "Lab AU", "time_zone": "Australia/Sydney"},
+    ).json()["id"]
+    tenant = "2b2b2b2b-0b0a-0908-0706-050403020100"
+    assert client.post(f"/api/offices/{oid}/consents/microsoft365", headers=ADMIN, json={"tenant_ref": tenant}).status_code == 201
+
+    # Before any scan: no countries chosen for a new office, every check not yet observed.
+    c = client.get(f"/api/offices/{oid}/compliance", headers=ADMIN).json()
+    assert c["jurisdictions"] == [] and c["frameworks"] == [] and {x["code"] for x in c["countries"]} == {"US", "AU", "SG"}
+    assert client.put(f"/api/offices/{oid}/jurisdictions", headers=ADMIN, json={"jurisdictions": ["XX"]}).status_code == 422
+    assert client.put(f"/api/offices/{oid}/jurisdictions", headers=OTHER, json={"jurisdictions": ["AU"]}).status_code == 404
+    r = client.put(f"/api/offices/{oid}/jurisdictions", headers=ADMIN, json={"jurisdictions": ["SG", "AU", "AU"]})
+    assert r.json() == {"jurisdictions": ["AU", "SG"]}
+
+    extra = [
+        read("domains", 200, {"value": [{"id": "lab.org", "isVerified": True, "isDefault": True}]}),
+        read("managed_devices", 200, {"value": MANAGED}),
+        read("compliance_policies", 200, {"value": [{"id": "p1"}]}),
+    ]
+    _collect_and_score(oid, tenant, extra, {"lab.org": {"spf": txt(), "dmarc": txt(), "dkim": dkim(False)}})
+
+    c = client.get(f"/api/offices/{oid}/compliance", headers=ADMIN).json()
+    assert [f["key"] for f in c["frameworks"]] == ["essential_eight", "privacy_au", "cyber_essentials_sg", "pdpa"]
+    assert set(c["deadlines"]) == {"AU", "SG"}
+    ce = {r["clause"]: r for r in c["frameworks"][2]["requirements"]}
+    assert ce["A.3"]["state"] == "gap" and ce["A.3"]["evidence"][0]["note"] == "1 of 2 computers encrypted"
+    assert ce["B.6"]["state"] == "gap"  # spoofable email and a non-compliant device
+    assert "intune_devices" not in client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()["facts"]
+
+    reg = client.get(f"/api/offices/{oid}/register", headers=ADMIN).json()
+    keys = {f["key"]: f for f in reg["findings"]}
+    assert {"intune:unencrypted", "intune:noncompliant", "intune:stale", "device:windows10", "email:spoofable"} <= set(keys)
+    assert keys["intune:unencrypted"]["evidence"]["sample"] == ["LT-2"] and keys["email:spoofable"]["theme"] == "email"
+    assert "email" in {t["key"] for t in reg["themes"]}
+    assert (
+        client.post(
+            f"/api/offices/{oid}/remediation",
+            headers=ADMIN,
+            json={"finding_key": "intune:unencrypted", "owner": "IT", "target_date": None},
+        ).status_code
+        == 201
+    )
+
+    # The next scan cannot read Intune (consent withdrawn): the item stays open, it is not "fixed".
+    _collect_and_score(oid, tenant)
+    items = client.get(f"/api/offices/{oid}/remediation", headers=ADMIN).json()
+    assert [i["status"] for i in items if i["finding_key"] == "intune:unencrypted"] == ["open"]

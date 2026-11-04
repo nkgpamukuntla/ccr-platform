@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api";
+import { api, Posture } from "../api";
 import { CollectedFacts, CollectorCard } from "./Collector";
 import EntraDevices from "./EntraDevices";
 import Export from "./Export";
+import { IntuneSection } from "./TenantChecks";
 
 type Template = { key: string; label: string; source: string; required: string[]; one_of: string[]; optional: string[] };
 type Issue = { row: number | null; level: "error" | "warning"; message: string };
@@ -105,9 +106,11 @@ export default function Devices() {
   const [imports, setImports] = useState<ImportRow[]>([]);
   const [only, setOnly] = useState("all");
   const [open, setOpen] = useState<number | null>(null);
+  const [scan, setScan] = useState<Posture | null>(null);
   const load = () => {
     api<Register>(`/api/offices/${officeId}/devices`).then(setReg);
     api<ImportRow[]>(`/api/offices/${officeId}/imports`).then(setImports);
+    api<Posture>(`/api/offices/${officeId}/posture`).then(setScan).catch(() => setScan(null));
   };
   useEffect(load, [officeId]);
   if (!reg) return <div className="muted">Loading…</div>;
@@ -146,6 +149,7 @@ export default function Devices() {
       ) : (
         <div className="banner warn">No devices yet. Upload your EDR console export (CrowdStrike Host management CSV) below to fill this page.</div>
       )}
+      {scan?.run && <IntuneSection it={scan.facts?.intune} />}
       <EntraDevices officeId={officeId} />
       <h2>All computers</h2>
       <div className="row" style={{ marginBottom: "0.75rem" }}>

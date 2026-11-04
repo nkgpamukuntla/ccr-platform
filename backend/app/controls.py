@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from app import entra_devices
+from app import email_dns, entra_devices, tenant_checks
 from app.microsoft.graph import items
 
 State = Literal["met", "gap", "weak", "not_observed", "pending"]
@@ -245,11 +245,13 @@ def evaluate(bundle: dict[str, Any]) -> list[ControlResult]:
 
 
 def facts(bundle: dict[str, Any], at: datetime | None = None) -> dict[str, Any]:
-    """Context shown beside the controls: licences, devices, and what each read returned."""
+    """Context shown beside the controls: licences, devices, Intune, Secure Score, email, and what each read returned."""
     reads = _reads(bundle)
     ok = _status(reads, "devices") == 200
     skus = items(reads.get("subscribed_skus", {}))
     devices = items(reads.get("devices", {}))
+    when = at or datetime.now(UTC)
+    managed = reads.get("managed_devices", {})
     return {
         "licences": [
             {
@@ -260,7 +262,11 @@ def facts(bundle: dict[str, Any], at: datetime | None = None) -> dict[str, Any]:
             for s in skus
             if s.get("capabilityStatus") == "Enabled"
         ],
-        "devices": entra_devices.summarize(devices, at or datetime.now(UTC)) if ok else None,
+        "devices": entra_devices.summarize(devices, when) if ok else None,
         "entra_devices": entra_devices.rows(devices) if ok else None,
+        "intune": tenant_checks.intune(reads, when),
+        "intune_devices": tenant_checks.intune_rows(items(managed)) if managed.get("status") == 200 else None,
+        "secure_score": tenant_checks.secure_score(reads),
+        "email": email_dns.evaluate({k: v for k, v in (bundle.get("email_dns") or {}).items() if not k.startswith("_")}),
         "reads": {name: r.get("status") for name, r in reads.items()},
     }

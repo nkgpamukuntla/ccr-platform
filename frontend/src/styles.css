@@ -137,3 +137,13 @@ button:disabled { opacity: 0.5; cursor: default; }
 .qa .found { grid-column: 1; }
 .qa .how { grid-column: 1 / -1; font-size: 0.85em; color: var(--muted); }
 .page-role { display: inline-block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.2rem; }
+
+/* Compliance by country */
+.cc { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--accent-soft); color: var(--accent); vertical-align: middle; }
+.fw { margin-bottom: 1rem; }
+.req { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; padding: 0.5rem 0.75rem; margin-bottom: 0.4rem; }
+.req.met { border-left-color: var(--good); } .req.gap { border-left-color: var(--bad); } .req.weak, .req.partly_checked { border-left-color: #d48a00; }
+.req-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.req .clause { font-family: ui-monospace, Consolas, monospace; font-size: 0.82rem; color: var(--muted); min-width: 4.5rem; }
+.req-body { margin-top: 0.5rem; border-top: 1px dashed var(--line); padding-top: 0.5rem; }
+.req-body table { margin: 0; }

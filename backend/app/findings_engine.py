@@ -74,7 +74,10 @@ def build(conn: Any, office_id: UUID) -> list[Finding]:
         (office_id,),
     ).fetchone()
     devs = office_devices(conn, office_id)
+    fx: dict[str, Any] = {}
     if run:
+        row = conn.execute("SELECT facts FROM run_facts WHERE run_id = %s", (run["id"],)).fetchone()
+        fx = row["facts"] if row else {}
         for c in conn.execute(
             "SELECT control, name, state, method, detail FROM control_result WHERE run_id = %s ORDER BY control", (run["id"],)
         ).fetchall():
@@ -180,6 +183,99 @@ def build(conn: Any, office_id: UUID) -> list[Finding]:
             "Upgrade to a supported Windows version or replace the device.",
             [d for d in devs if "windows 10" in (d["os"] or "").lower()],
         )
+    if run:
+        out += _tenant_findings(fx, devs, run["finished_at"] or run["started_at"])
     for f in out:
         f.theme = plain.theme(f.key)
+    return out
+
+
+def _tenant_findings(fx: dict[str, Any], devs: list[dict[str, Any]], as_of: datetime) -> list[Finding]:
+    """Intune and email-authentication findings from the latest scan's facts."""
+    out: list[Finding] = []
+
+    def add(key: str, title: str, severity: str, source: str, rec: str, technical: str, evidence: dict[str, Any]) -> None:
+        out.append(
+            Finding(
+                key=key,
+                title=title,
+                area="Email" if key.startswith("email:") else "Devices",
+                control=None,
+                severity=severity,
+                source=source,
+                recommendation=rec,
+                why=plain.DEVICE.get(key, ""),
+                technical=technical,
+                as_of=as_of,
+                evidence=evidence,
+            )
+        )
+
+    it = fx.get("intune")
+    if it:
+        src = "Connected · Intune"
+        if it["unencrypted"]:
+            add(
+                "intune:unencrypted",
+                f"{it['unencrypted']} of {it['computers']} computers without disk encryption",
+                "High",
+                src,
+                "Turn on BitLocker (Windows) or FileVault (Mac) with an Intune policy, keeping the recovery keys in Entra ID.",
+                "Intune managedDevices isEncrypted = false",
+                {"devices": it["unencrypted"], "of": it["computers"], "sample": it["sample"]["unencrypted"]},
+            )
+        if it["noncompliant"]:
+            add(
+                "intune:noncompliant",
+                f"{it['noncompliant']} of {it['total']} devices fail your Intune compliance rules",
+                "Medium",
+                src,
+                "Fix or retire the non-compliant devices, and block them from company data with Conditional Access.",
+                "Intune managedDevices complianceState = noncompliant",
+                {"devices": it["noncompliant"], "of": it["total"], "sample": it["sample"]["noncompliant"]},
+            )
+        if it["stale"]:
+            add(
+                "intune:stale",
+                f"{it['stale']} devices have not checked in with Intune for over 30 days",
+                "Medium",
+                src,
+                "Find these devices and bring them back online, or retire and remove them from Intune.",
+                "Intune managedDevices lastSyncDateTime older than 30 days",
+                {"devices": it["stale"], "of": it["total"], "sample": it["sample"]["stale"]},
+            )
+        if it["windows10"] and not devs:  # the device register reports Windows 10 when it has devices
+            add(
+                "device:windows10",
+                f"{it['windows10']} devices on Windows 10 (out of support)",
+                "High",
+                src,
+                "Upgrade to a supported Windows version or replace the device.",
+                "Intune managedDevices osVersion 10.0 build below 22000",
+                {"devices": it["windows10"], "of": it["total"], "sample": it["sample"]["windows10"]},
+            )
+
+    em = fx.get("email")
+    if em:
+        rows = {d["domain"]: d for d in em["domains"]}
+        if em["unsafe"]:
+            add(
+                "email:spoofable",
+                f"{len(em['unsafe'])} email domain(s) can be faked (no SPF or DMARC)",
+                "High",
+                "Public DNS",
+                "Publish an SPF record ending in -all and a DMARC record for each domain, then move DMARC to quarantine or reject.",
+                "RFC 7208 SPF / RFC 7489 DMARC record missing or invalid",
+                {"domains": [rows[d] for d in em["unsafe"]]},
+            )
+        if em["loose"]:
+            add(
+                "email:dmarc_monitor",
+                f"{len(em['loose'])} email domain(s) only monitor fake email (DMARC p=none or SPF ?all)",
+                "Medium",
+                "Public DNS",
+                "After checking the DMARC reports, change the policy to p=quarantine, then p=reject.",
+                "DMARC p=none, or SPF without -all/~all",
+                {"domains": [rows[d] for d in em["loose"]]},
+            )
     return out

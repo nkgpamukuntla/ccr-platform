@@ -196,6 +196,11 @@ DEVICE: dict[str, str] = {
     "device:edr_missing": "Without EDR, malware and attackers on that computer go undetected.",
     "device:edr_stale": "A sensor that has stopped reporting gives no protection or alerts.",
     "device:windows10": "Windows 10 no longer receives security fixes, so known holes stay open.",
+    "intune:unencrypted": "If an unencrypted laptop is lost or stolen, anyone can read the files on it.",
+    "intune:noncompliant": "These devices fail the security rules you set in Intune, so they may be missing protection.",
+    "intune:stale": "A device that has not checked in for a month gets no new policies and may be lost or retired.",
+    "email:spoofable": "Without SPF and DMARC anyone can send email that appears to come from you, the most common start of fraud.",
+    "email:dmarc_monitor": "DMARC is only watching: fake email using your name is still delivered to inboxes.",
 }
 
 SEVERITY = {"Mandatory": "Must fix", "High": "Important", "Medium": "Good practice"}
@@ -279,6 +284,10 @@ THEMES: dict[str, tuple[str, str]] = {
     "backups": ("Protect the backups", "Backups cannot be reached or deleted with a stolen password."),
     "apps": ("Control apps and guest access", "Outside apps and guests cannot quietly get access to company data."),
     "monitor": ("Make sure someone sees the warning signs", "Security alerts and logs reach the people who watch for attacks."),
+    "email": (
+        "Stop others sending email as you",
+        "Email that pretends to come from your domains is rejected before it reaches anyone.",
+    ),
 }
 _THEME_OF = {
     "control:1": "mfa",
@@ -305,8 +314,10 @@ _THEME_OF = {
 
 def theme(key: str) -> str:
     """The recommendation a finding belongs to."""
-    if key.startswith("device:"):
+    if key.startswith(("device:", "intune:")):
         return "devices"
+    if key.startswith("email:"):
+        return "email"
     k = key.removeprefix("scuba:")
     if k in _THEME_OF:
         return _THEME_OF[k]

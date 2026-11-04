@@ -117,6 +117,34 @@ export type Posture = {
   facts: {
     licences: { sku: string; enabled: number; consumed: number }[];
     devices: EntraSummary | null;
+    intune?: Intune | null;
+    secure_score?: SecureScore | null;
+    email?: EmailAuth | null;
     reads: Record<string, number>;
   } | null;
 };
+
+export type Intune = {
+  total: number;
+  compliant: number;
+  noncompliant: number;
+  computers: number;
+  encrypted: number;
+  unencrypted: number;
+  windows10: number;
+  stale: number;
+  personal: number;
+  by_os: Record<string, number>;
+  policies: number | null;
+  sample: Record<"noncompliant" | "unencrypted" | "windows10" | "stale", string[]>;
+};
+export type SecureScore = {
+  current: number;
+  max: number;
+  percent: number | null;
+  as_of: string | null;
+  all_tenants_average: number | null;
+  top_actions: { title: string; category: string | null; gain: number; impact: string | null }[];
+};
+export type EmailDomain = { domain: string; spf: string; spf_record: string | null; dmarc: string; dmarc_record: string | null; dkim: string };
+export type EmailAuth = { state: string; domains: EmailDomain[]; unsafe: string[]; loose: string[] };

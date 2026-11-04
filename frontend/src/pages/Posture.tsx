@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, ControlRow, OfficeRow, Posture as PostureData } from "../api";
 import { InfoButton, methodText, value } from "../components/Plain";
 import EntraDevices from "./EntraDevices";
+import { EmailSection, SecureScoreSection } from "./TenantChecks";
 import Export from "./Export";
 
 const PILL: Record<string, string> = { met: "pass", gap: "fail", weak: "warn", not_observed: "", pending: "" };
@@ -132,6 +133,9 @@ export default function Posture() {
               .sort((a, b) => ORDER.indexOf(a.state) - ORDER.indexOf(b.state) || a.control - b.control)
               .map((c) => <ControlCard key={c.control} c={c} />)}
           </div>
+
+          <EmailSection em={p.facts?.email} />
+          <SecureScoreSection ss={p.facts?.secure_score} />
 
           {dev && <EntraDevices officeId={officeId} />}
 

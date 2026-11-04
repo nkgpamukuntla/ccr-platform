@@ -26,12 +26,21 @@ def sync(conn: Any, office_id: UUID, findings: list[Finding]) -> int:
         {"o": office_id},
     ).fetchone()["at"]
     evidence_at = max(x for x in (newest, latest) if x is not None) if (newest or latest) else None
+    # A source the latest scan could not read is not evidence of a fix: keep its items open.
+    fx = conn.execute(
+        "SELECT f.facts FROM collection_run r JOIN run_facts f ON f.run_id = r.id "
+        "WHERE r.office_id = %s AND r.status = 'evaluated' ORDER BY r.started_at DESC LIMIT 1",
+        (office_id,),
+    ).fetchone()
+    unread = tuple(f"{k}:" for k in ("intune", "email") if not (fx and fx["facts"].get(k)))
     closed = 0
     for item in conn.execute(
         "SELECT id, finding_key, status, updated_at FROM remediation_item WHERE office_id = %s AND status <> 'closed'",
         (office_id,),
     ).fetchall():
-        if item["finding_key"] in current or evidence_at is None or evidence_at <= item["updated_at"]:
+        if item["finding_key"] in current or item["finding_key"].startswith(unread) or evidence_at is None:
+            continue
+        if evidence_at <= item["updated_at"]:
             continue
         reason = f"Closed by re-read {evidence_at:%d %b %Y}: the finding is no longer present"
         conn.execute(

@@ -22,7 +22,7 @@ import boto3
 import httpx
 from psycopg.types.json import Jsonb
 
-from app import db, notify, schedule
+from app import db, email_dns, notify, schedule
 from app.config import Settings, get_settings
 from app.microsoft import graph
 from app.microsoft.signer import KmsSigner
@@ -94,6 +94,11 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
     try:
         token = get_token(http, signer, s.ms_client_id, ms_tenant, s.ms_cert_thumbprint_sha1, s.ms_cert_thumbprint_sha256)
         reads = [graph.fetch(http, token, r) for r in graph.READS]
+        # Email authentication from public DNS for the tenant's verified domains (no consent needed).
+        try:
+            mail_dns = email_dns.lookup(email_dns.domains(graph.items(next(r for r in reads if r["name"] == "domains"))))
+        except Exception as e:  # noqa: BLE001 - DNS is additive; the Graph evidence still seals
+            mail_dns = {"_error": f"{type(e).__name__}: {str(e)[:200]}"}
         # ScubaGear's Entra collection (ported): every response recorded for the evaluator to replay.
         live = scuba_aad.LiveGraph(http, token)
         scuba_aad.build_provider(live)
@@ -108,6 +113,7 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
             "finished_at": datetime.now(UTC).isoformat(),
             "reads": reads,
             "scuba_aad": {"baseline": "v1.8.0", "responses": live.responses},
+            "email_dns": mail_dns,
         }
         key = f"{office_id}/microsoft365/{run_id}.json"
         put = boto3.client("s3", region_name=s.aws_region).put_object(
@@ -121,6 +127,7 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
         )
         summary: dict[str, Any] = {r["name"]: r["status"] for r in reads}
         summary["scuba_aad_calls"] = len(live.responses)
+        summary["email_domains"] = len([d for d in mail_dns if not d.startswith("_")])
         summary["scuba_aad_not_ok"] = sum(1 for v in live.responses.values() if v["status"] != 200)
         with db.tx() as conn:
             conn.execute(
