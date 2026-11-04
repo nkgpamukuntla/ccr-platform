@@ -34,7 +34,8 @@ def workspaces(user: CurrentUser) -> list[dict[str, Any]]:
     with tx() as conn:
         viewable = list(viewer_workspaces(conn, user))
         return conn.execute(
-            "SELECT w.id, w.name, w.kind, w.industry, w.created_at, w.id = ANY(%s) AS can_view_all, "
+            "SELECT w.id, w.name, w.kind, w.industry, w.created_at, w.countries, w.frameworks, w.group_frameworks, "
+            "w.id = ANY(%s) AS can_view_all, "
             "(SELECT count(*) FROM office o WHERE o.workspace_id = w.id AND o.archived_at IS NULL) AS offices "
             "FROM workspace w WHERE w.id = ANY(%s) OR EXISTS ("
             " SELECT 1 FROM office o JOIN membership m ON m.office_id = o.id WHERE o.workspace_id = w.id AND m.email = %s) "

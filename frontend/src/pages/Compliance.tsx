@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, OfficeRow, SecureScore } from "../api";
+import { useMe } from "../App";
 import { InfoButton } from "../components/Plain";
 
 type Evidence = { key: string; label: string; state: string; note: string };
@@ -8,8 +9,10 @@ type Requirement = { clause: string; asks: string; state: string; evidence: Evid
 type Framework = { key: string; country: string; name: string; applies: string; counts: Record<string, number>; requirements: Requirement[] };
 type View = {
   as_of: string | null;
+  country: string | null;
   countries: { code: string; name: string }[];
-  jurisdictions: string[];
+  organisation: { id: string; name: string; countries: string[]; frameworks: string[]; group_frameworks: string[] } | null;
+  catalogue: { key: string; country: string; name: string }[];
   frameworks: Framework[];
   deadlines: Record<string, { event: string; deadline: string }[]>;
   secure_score: SecureScore | null;
@@ -109,13 +112,12 @@ export default function Compliance() {
     load();
   }, [officeId]);
 
-  const toggle = async (code: string) => {
-    if (!v) return;
-    const next = v.jurisdictions.includes(code) ? v.jurisdictions.filter((j) => j !== code) : [...v.jurisdictions, code];
+  const me = useMe();
+  const setCountry = async (code: string) => {
     setSaving(true);
     setError("");
     try {
-      await api(`/api/offices/${officeId}/jurisdictions`, { method: "PUT", body: JSON.stringify({ jurisdictions: next }) });
+      await api(`/api/offices/${officeId}/country`, { method: "PUT", body: JSON.stringify({ country: code }) });
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -132,27 +134,49 @@ export default function Compliance() {
 
   return (
     <>
-      <div className="page-role">Compliance · by country</div>
+      <div className="page-role">Compliance · by country and organisation</div>
       <h1>Compliance</h1>
       <p className="lead">
-        Each country's rules, matched to what we checked in your environment. One check can count for several rules. This shows your
+        The rules for this office's country and what its organisation requires, matched to what we checked. One check can count for several rules. This shows your
         evidence; it is not a certificate or legal advice. <Link to={`/offices/${officeId}/remediation`}>Action plan</Link>
       </p>
 
-      <div className="card">
-        <strong>Countries this office works in</strong>
-        <div className="choices" style={{ marginTop: "0.5rem" }}>
-          {v.countries.map((c) => (
-            <button key={c.code} className={v.jurisdictions.includes(c.code) ? "on" : ""} disabled={saving} onClick={() => toggle(c.code)}>
-              <Code c={c.code} /> {c.name}
-            </button>
-          ))}
-        </div>
-        {error && <div className="error">{error}</div>}
-      </div>
+      {(() => {
+        const org = v.organisation;
+        const options = org && org.countries.length ? org.countries : v.countries.map((c) => c.code);
+        const name = (c: string | null) => v.countries.find((x) => x.code === c)?.name ?? c;
+        const group = v.catalogue.filter((f) => org?.group_frameworks.includes(f.key));
+        return (
+          <div className="card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div>
+                <strong>This office is in</strong>{" "}
+                <select value={v.country ?? ""} disabled={saving} onChange={(e) => setCountry(e.target.value)} style={{ maxWidth: 220, display: "inline-block", marginLeft: "0.4rem" }}>
+                  {!v.country && <option value="">Choose a country…</option>}
+                  {options.map((c) => (
+                    <option key={c} value={c}>{name(c)}</option>
+                  ))}
+                </select>
+              </div>
+              {org && (
+                <span className="muted" style={{ fontSize: "0.9em" }}>
+                  {org.name} works in {org.countries.length ? org.countries.map(name).join(", ") : "countries not set yet"}
+                  {me.is_admin && <> · <Link to={`/workspaces/${org.id}`}>Change for the organisation</Link></>}
+                </span>
+              )}
+            </div>
+            {group.length > 0 && (
+              <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.9em" }}>
+                {org?.name} also requires in every office: {group.map((f) => f.name).join(", ")}.
+              </p>
+            )}
+            {error && <div className="error">{error}</div>}
+          </div>
+        );
+      })()}
 
-      {v.jurisdictions.length === 0 ? (
-        <div className="banner warn">Choose at least one country above to see its rules.</div>
+      {!v.country ? (
+        <div className="banner warn">Choose the office's country above to see the rules that apply.</div>
       ) : (
         <>
           <div className="stats">
@@ -172,7 +196,7 @@ export default function Compliance() {
 
           <h2>If something happens: reporting deadlines</h2>
           <div className="controls">
-            {v.jurisdictions.map((j) => (
+            {Object.keys(v.deadlines).map((j) => (
               <div className="card" key={j}>
                 <h3 style={{ marginTop: 0 }}><Code c={j} /> {v.countries.find((c) => c.code === j)?.name}</h3>
                 {(v.deadlines[j] ?? []).map((d) => (

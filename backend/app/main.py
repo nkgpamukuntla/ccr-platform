@@ -56,6 +56,8 @@ app.include_router(aoc.router)
 app.include_router(workspaces.router)
 app.include_router(remediation.router)
 app.include_router(compliance.router)
+app.include_router(compliance.org_router)
+app.include_router(compliance.catalogue_router)
 app.include_router(licences.router)
 
 

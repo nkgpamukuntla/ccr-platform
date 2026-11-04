@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { api, OfficeRow, post } from "../api";
 import { useMe, useOrg } from "../App";
 
-type Workspace = { id: string; name: string; kind: "courts" | "organization"; industry: string | null; offices: number };
+type Workspace = { id: string; name: string; kind: "courts" | "organization"; industry: string | null; offices: number; countries: string[] };
+const COUNTRY: Record<string, string> = { US: "United States", AU: "Australia", SG: "Singapore", IN: "India" };
 
 /** "Daily scan 18:00 America/New York · next 28 Oct, 03:30 your time" */
 export function scanText(r: { collect_at: string; time_zone: string; next_scan: string }) {
@@ -18,7 +19,7 @@ export default function Offices() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [types, setTypes] = useState<string[]>([]);
   const [zones, setZones] = useState<string[]>([]);
-  const [form, setForm] = useState({ workspace_id: "", name: "", office_type: "", county: "", time_zone: "America/New_York", collect_at: "18:00" });
+  const [form, setForm] = useState({ workspace_id: "", name: "", office_type: "", county: "", country: "", time_zone: "America/New_York", collect_at: "18:00" });
   const [error, setError] = useState("");
 
   const load = () => api<OfficeRow[]>("/api/offices").then(setRows).catch((e) => setError(e.message));
@@ -48,7 +49,7 @@ export default function Offices() {
     e.preventDefault();
     setError("");
     try {
-      await post("/api/offices", form);
+      await post("/api/offices", { ...form, country: form.country || null });
       setForm({ ...form, name: "", county: "" });
       load();
     } catch (err) {
@@ -151,7 +152,7 @@ export default function Offices() {
                 <tr key={r.id}>
                   <td>
                     <strong>{r.name}</strong>
-                    <div className="muted">{r.office_type}</div>
+                    <div className="muted">{r.office_type}{r.country && <> · <span className="cc">{r.country}</span> {COUNTRY[r.country] ?? r.country}</>}</div>
                     <div className="muted" style={{ fontSize: "0.85em" }}>{scanText(r)}</div>
                   </td>
                   <td>{r.county}</td>
@@ -190,7 +191,21 @@ export default function Offices() {
               <option key={t}>{t}</option>
             ))}
           </select>
-          <label htmlFor="county">{kind === "courts" ? "County" : "Location"}</label>
+          {current.countries.length > 1 && (
+            <>
+              <label htmlFor="country">Country</label>
+              <select id="country" required value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })}>
+                <option value="">Choose the office's country…</option>
+                {current.countries.map((c) => (
+                  <option key={c} value={c}>{COUNTRY[c] ?? c}</option>
+                ))}
+              </select>
+            </>
+          )}
+          {current.countries.length === 0 && (
+            <p className="muted">Set this organisation's countries under <Link to={`/workspaces/${current.id}`}>Organisations</Link> so offices get the right compliance.</p>
+          )}
+          <label htmlFor="county">{kind === "courts" ? "County" : "City or location"}</label>
           <input id="county" type="text" required value={form.county} onChange={(e) => setForm({ ...form, county: e.target.value })} placeholder={kind === "courts" ? "Bulloch" : "Singapore"} />
           <label htmlFor="tz">Time zone and end of business day (the daily scan runs then)</label>
           <div className="row">

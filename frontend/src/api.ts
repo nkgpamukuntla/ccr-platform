@@ -67,6 +67,7 @@ export type OfficeRow = {
   name: string;
   office_type: string;
   county: string;
+  country: string | null;
   profile: string | null;
   completed_steps: number[];
   live_at: string | null;

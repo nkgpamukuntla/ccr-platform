@@ -813,21 +813,34 @@ def test_compliance_by_country_with_intune_and_email(client: Any) -> None:
     from tests.test_compliance import MANAGED, dkim, txt
     from tests.test_microsoft import read
 
-    oid = client.post(
-        "/api/offices",
-        headers=ADMIN,
-        json={"name": "Sydney office", "office_type": "County IT", "county": "Lab AU", "time_zone": "Australia/Sydney"},
-    ).json()["id"]
+    # The organisation says where it operates and what it requires; each office sits in one country.
+    ws = client.post(
+        "/api/workspaces", headers=ADMIN, json={"name": "Regional Co", "kind": "organization", "industry": "IT"}
+    ).json()
+    org = {"countries": ["SG", "AU", "IN"], "frameworks": [], "group_frameworks": ["cyber_essentials_sg"]}
+    assert client.put(f"/api/workspaces/{ws['id']}/compliance", headers=CLERK, json=org).status_code == 403
+    assert (
+        client.put(f"/api/workspaces/{ws['id']}/compliance", headers=ADMIN, json={**org, "countries": ["XX"]}).status_code == 422
+    )
+    assert client.put(f"/api/workspaces/{ws['id']}/compliance", headers=ADMIN, json=org).json()["countries"] == ["AU", "IN", "SG"]
+    office = {"workspace_id": ws["id"], "name": "Sydney office", "office_type": "Head office", "county": "Sydney"}
+    assert client.post("/api/offices", headers=ADMIN, json={**office, "country": "US"}).status_code == 422
+    oid = client.post("/api/offices", headers=ADMIN, json={**office, "country": "AU", "time_zone": "Australia/Sydney"}).json()[
+        "id"
+    ]
     tenant = "2b2b2b2b-0b0a-0908-0706-050403020100"
     assert client.post(f"/api/offices/{oid}/consents/microsoft365", headers=ADMIN, json={"tenant_ref": tenant}).status_code == 201
 
-    # Before any scan: no countries chosen for a new office, every check not yet observed.
+    # Before any scan: the office's country frameworks plus the group-wide one, nothing observed yet.
     c = client.get(f"/api/offices/{oid}/compliance", headers=ADMIN).json()
-    assert c["jurisdictions"] == [] and c["frameworks"] == [] and {x["code"] for x in c["countries"]} == {"US", "AU", "SG"}
-    assert client.put(f"/api/offices/{oid}/jurisdictions", headers=ADMIN, json={"jurisdictions": ["XX"]}).status_code == 422
-    assert client.put(f"/api/offices/{oid}/jurisdictions", headers=OTHER, json={"jurisdictions": ["AU"]}).status_code == 404
-    r = client.put(f"/api/offices/{oid}/jurisdictions", headers=ADMIN, json={"jurisdictions": ["SG", "AU", "AU"]})
-    assert r.json() == {"jurisdictions": ["AU", "SG"]}
+    assert c["country"] == "AU" and set(c["deadlines"]) == {"AU"}
+    assert [f["key"] for f in c["frameworks"]] == ["essential_eight", "privacy_au", "cyber_essentials_sg"]
+    assert client.put(f"/api/offices/{oid}/country", headers=ADMIN, json={"country": "US"}).status_code == 422
+    assert client.put(f"/api/offices/{oid}/country", headers=OTHER, json={"country": "IN"}).status_code == 404
+    assert client.put(f"/api/offices/{oid}/country", headers=ADMIN, json={"country": "IN"}).json() == {"country": "IN"}
+    keys = [f["key"] for f in client.get(f"/api/offices/{oid}/compliance", headers=ADMIN).json()["frameworks"]]
+    assert keys == ["cyber_essentials_sg", "cert_in", "dpdp"]
+    assert client.put(f"/api/offices/{oid}/country", headers=ADMIN, json={"country": "AU"}).status_code == 200
 
     extra = [
         read("domains", 200, {"value": [{"id": "lab.org", "isVerified": True, "isDefault": True}]}),
@@ -851,8 +864,7 @@ def test_compliance_by_country_with_intune_and_email(client: Any) -> None:
     assert "licence_data" not in client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()["facts"]
 
     c = client.get(f"/api/offices/{oid}/compliance", headers=ADMIN).json()
-    assert [f["key"] for f in c["frameworks"]] == ["essential_eight", "privacy_au", "cyber_essentials_sg", "pdpa"]
-    assert set(c["deadlines"]) == {"AU", "SG"}
+    assert [f["key"] for f in c["frameworks"]] == ["essential_eight", "privacy_au", "cyber_essentials_sg"]
     ce = {r["clause"]: r for r in c["frameworks"][2]["requirements"]}
     assert ce["A.3"]["state"] == "gap" and ce["A.3"]["evidence"][0]["note"] == "1 of 2 computers encrypted"
     assert ce["B.6"]["state"] == "gap"  # spoofable email and a non-compliant device

@@ -36,6 +36,7 @@ class OfficeIn(BaseModel):
     office_type: str
     county: str = Field(min_length=2, max_length=80)  # the county for courts; a location for organisations
     workspace_id: UUID | None = None  # default: the courts workspace
+    country: str | None = None  # one of the organisation's countries; the only one when it has one
     time_zone: str = schedule.DEFAULT_TZ
     collect_at: time = schedule.DEFAULT_AT
 
@@ -100,7 +101,7 @@ def sites(user: CurrentUser, county: str | None = None) -> list[dict[str, Any]]:
 @router.get("/offices")
 def list_offices(user: CurrentUser) -> list[dict[str, Any]]:
     q = """
-        SELECT o.id, o.name, o.office_type, o.county, o.time_zone, o.collect_at, ep.profile,
+        SELECT o.id, o.name, o.office_type, o.county, o.country, o.time_zone, o.collect_at, ep.profile,
                COALESCE(ob.completed_steps, '{}') AS completed_steps, ob.live_at,
                w.id AS workspace_id, w.name AS workspace, w.kind AS workspace_kind
         FROM office o
@@ -126,10 +127,17 @@ def create_office(body: OfficeIn, user: Annotated[User, Depends(require_admin)])
             assert courts is not None
             ws = courts["id"]
         _check_type(conn, ws, body.office_type)
+        org = conn.execute("SELECT countries FROM workspace WHERE id = %s", (ws,)).fetchone()
+        countries = list(org["countries"]) if org else []
+        country = body.country or (countries[0] if len(countries) == 1 else None)
+        if countries and country not in countries:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, f"choose the office's country: one of {', '.join(countries)}"
+            )
         row = conn.execute(
-            "INSERT INTO office (name, office_type, county, workspace_id, time_zone, collect_at, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
-            (body.name, body.office_type, body.county, ws, body.time_zone, body.collect_at, user.email),
+            "INSERT INTO office (name, office_type, county, country, workspace_id, time_zone, collect_at, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *",
+            (body.name, body.office_type, body.county, country, ws, body.time_zone, body.collect_at, user.email),
         ).fetchone()
         assert row is not None
         conn.execute("INSERT INTO onboarding (office_id) VALUES (%s)", (row["id"],))

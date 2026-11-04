@@ -169,7 +169,11 @@ def test_frameworks_never_claim_more_than_the_evidence() -> None:
     assert found["legacy"]["state"] == "met" and found["encryption"]["state"] == "not_observed"
     assert found["c2"]["state"] == "not_observed" and found["inventory"]["state"] == "not_observed"
 
-    out = frameworks.assess(["AU"], found)
+    assert frameworks.applicable("AU", [], []) == ["essential_eight", "privacy_au"]
+    assert frameworks.applicable("AU", ["essential_eight", "nist_csf"], []) == ["essential_eight"]  # the org chose for AU
+    assert frameworks.applicable("IN", ["essential_eight"], ["nist_csf"]) == ["nist_csf", "cert_in", "dpdp"]
+    assert frameworks.applicable(None, [], []) == []
+    out = frameworks.assess(frameworks.applicable("AU", [], []), found)
     assert [f["key"] for f in out] == ["essential_eight", "privacy_au"]
     e8 = {r["asks"]: r for r in out[0]["requirements"]}
     assert e8["Restrict Microsoft Office macros"]["state"] == "pending"  # only the office can answer

@@ -2,8 +2,19 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, post } from "../api";
 import { useMe } from "../App";
+import OrgCompliance from "./OrgCompliance";
 
-type Workspace = { id: string; name: string; kind: "courts" | "organization"; industry: string | null; offices: number; can_view_all: boolean };
+type Workspace = {
+  id: string;
+  name: string;
+  kind: "courts" | "organization";
+  industry: string | null;
+  offices: number;
+  can_view_all: boolean;
+  countries: string[];
+  frameworks: string[];
+  group_frameworks: string[];
+};
 type Summary = {
   workspace: { id: string; name: string; kind: string; industry: string | null };
   totals: { offices: number; live: number; sites_in_register: number; sites_covered: number };
@@ -125,18 +136,19 @@ export default function Workspaces() {
     <>
       <h1>Organisations</h1>
       <p className="lead">
-        One workspace per customer or programme: the Georgia courts, D-Biz itself, or any other organisation. Offices belong to one workspace, and a
-        workspace viewer sees only that workspace.
+        One per customer or programme: the Georgia courts, D-Biz itself, or any other organisation. Each organisation sets the countries it works
+        in and the frameworks it needs; its offices each sit in one of those countries. Open an organisation to set them.
       </p>
       {error && <div className="error">{error}</div>}
       <table>
-        <thead><tr><th>Organisation</th><th>Kind</th><th>Industry</th><th>Offices</th></tr></thead>
+        <thead><tr><th>Organisation</th><th>Kind</th><th>Industry</th><th>Countries</th><th>Offices</th></tr></thead>
         <tbody>
           {rows.map((w) => (
             <tr key={w.id}>
               <td>{w.can_view_all ? <Link to={`/workspaces/${w.id}`}>{w.name}</Link> : w.name}</td>
               <td>{KIND[w.kind]}</td>
               <td>{w.industry ?? "—"}</td>
+              <td>{w.countries.length ? w.countries.map((c) => <span key={c} className="cc" style={{ marginRight: 4 }}>{c}</span>) : <span className="muted">Not set</span>}</td>
               <td>{w.offices}</td>
             </tr>
           ))}
@@ -146,6 +158,7 @@ export default function Workspaces() {
       {current && (
         <div className="card" style={{ marginTop: "1.5rem" }}>
           <h2 style={{ marginTop: 0 }}>{current.name}</h2>
+          <OrgCompliance org={current} canEdit={me.is_admin} onSaved={load} />
           <WorkspaceSummary id={current.id} />
           {me.is_admin && <Viewers id={current.id} />}
           <p><Link to="/offices">All organisations</Link></p>

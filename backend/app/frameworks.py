@@ -10,7 +10,7 @@ This shows our evidence against each framework. It is not a certification or leg
 
 from typing import Any
 
-COUNTRIES = {"US": "United States", "AU": "Australia", "SG": "Singapore"}
+COUNTRIES = {"US": "United States", "AU": "Australia", "SG": "Singapore", "IN": "India"}
 
 # What each check is, in the words the page shows.
 CHECKS = {
@@ -130,6 +130,31 @@ FRAMEWORKS: list[dict[str, Any]] = [
             ("Part 6A", "Ready to assess and notify a data breach", ["c7", "logs"]),
         ],
     },
+    {
+        "key": "cert_in",
+        "country": "IN",
+        "name": "CERT-In Directions (April 2022)",
+        "applies": "Every organisation with IT systems in India, including service providers and data centres.",
+        "requirements": [
+            ("Dir. (ii)", "Report cyber incidents to CERT-In within 6 hours of noticing them", ["c7"]),
+            ("Dir. (iv)", "Keep system logs for 180 days, stored in India", []),
+            ("Dir. (i)", "Synchronise system clocks to an approved time source (NTP)", []),
+            ("Dir. (iii)", "Name a point of contact for CERT-In", []),
+            ("Dir. (iv)", "Logs are produced and sent to those who watch them", ["logs"]),
+        ],
+    },
+    {
+        "key": "dpdp",
+        "country": "IN",
+        "name": "Digital Personal Data Protection Act 2023 and Rules 2025",
+        "applies": "Every organisation that processes digital personal data in India.",
+        "requirements": [
+            ("s8(5)", "Reasonable security safeguards for personal data", ["c1", "c2", "c3", "c5", "encryption"]),
+            ("Rule 6", "Access control, monitoring and logs to detect unauthorised access", ["admins", "logs", "legacy"]),
+            ("Rule 6", "Backups so personal data can be recovered", ["c4", "c6"]),
+            ("s8(6)", "Ready to report a breach to the Board and affected people", ["c7"]),
+        ],
+    },
 ]
 
 # Incident reporting clocks. The page shows them as a reminder, not legal advice.
@@ -160,7 +185,26 @@ DEADLINES: dict[str, list[tuple[str, str]]] = {
         ),
         ("Critical information infrastructure", "Owners report to CSA within 2 hours of becoming aware."),
     ],
+    "IN": [
+        ("Cyber incident (CERT-In Directions)", "Report to CERT-In within 6 hours of noticing it."),
+        (
+            "Personal data breach (DPDP Rules 2025)",
+            "Tell the Data Protection Board and affected people without delay; a full report to the Board within 72 hours.",
+        ),
+    ],
 }
+
+
+def by_key() -> dict[str, dict[str, Any]]:
+    return {fw["key"]: fw for fw in FRAMEWORKS}
+
+
+def applicable(country: str | None, frameworks: list[str], group_frameworks: list[str]) -> list[str]:
+    """Frameworks for an office: the organisation's chosen ones for the office's country (all of that
+    country's when it chose none), plus those it requires in every office."""
+    here = [fw["key"] for fw in FRAMEWORKS if fw["country"] == country]
+    chosen = [k for k in here if k in frameworks] if any(k in frameworks for k in here) else here
+    return [fw["key"] for fw in FRAMEWORKS if fw["key"] in chosen or fw["key"] in group_frameworks]
 
 
 def combine(states: list[str]) -> str:
@@ -261,14 +305,14 @@ def checks(
     return out
 
 
-def assess(jurisdictions: list[str], found: dict[str, dict[str, str]]) -> list[dict[str, Any]]:
+def assess(keys: list[str], found: dict[str, dict[str, str]]) -> list[dict[str, Any]]:
     out = []
     for fw in FRAMEWORKS:
-        if fw["country"] not in jurisdictions:
+        if fw["key"] not in keys:
             continue
         reqs = []
-        for clause, asks, keys in fw["requirements"]:
-            evidence = [{"key": k, "label": CHECKS[k], **found[k]} for k in keys]
+        for clause, asks, checks_for in fw["requirements"]:
+            evidence = [{"key": k, "label": CHECKS[k], **found[k]} for k in checks_for]
             state = combine([e["state"] for e in evidence])
             reqs.append({"clause": clause, "asks": asks, "state": state, "evidence": evidence})
         counts: dict[str, int] = {}
