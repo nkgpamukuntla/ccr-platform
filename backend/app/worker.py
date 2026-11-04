@@ -59,6 +59,17 @@ def consented_offices() -> list[dict[str, Any]]:
         ).fetchall()
 
 
+def granted_roles(token: str) -> list[str]:
+    """The application permissions the tenant has granted, as Microsoft put them in the token.
+    Only the payload's roles claim is read; the token itself is never stored or logged."""
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return sorted(str(r) for r in claims.get("roles") or [])
+    except (IndexError, ValueError):
+        return []
+
+
 def final_failure(o: dict[str, Any], now: datetime) -> bool:
     """The run that just failed was the last retry for today's scan: say so, once."""
     since = schedule.last_due(now, o["time_zone"], o["collect_at"])
@@ -127,6 +138,8 @@ def collect_one(s: Settings, http: httpx.Client, signer: KmsSigner, office_id: U
         )
         summary: dict[str, Any] = {r["name"]: r["status"] for r in reads}
         summary["scuba_aad_calls"] = len(live.responses)
+        roles = granted_roles(token)
+        summary["permissions_missing"] = sorted(set(graph.PERMISSIONS) - set(roles)) if roles else ["unknown"]
         summary["email_domains"] = len([d for d in mail_dns if not d.startswith("_")])
         summary["scuba_aad_not_ok"] = sum(1 for v in live.responses.values() if v["status"] != 200)
         with db.tx() as conn:

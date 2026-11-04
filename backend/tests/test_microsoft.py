@@ -247,3 +247,14 @@ def test_seeded_lab_a_shape() -> None:
     r = {x.control: x for x in evaluate(bundle(ca=[vendor, risk], regs=regs))}
     assert r[1].state == "weak" and r[1].detail["report_only_policies"] == ["MFA for partners and vendors"]
     assert r[2].state == "gap" and r[3].state == "weak"
+
+
+def test_granted_roles_from_token_payload() -> None:
+    import base64
+    import json
+
+    from app.worker import granted_roles
+
+    body = base64.urlsafe_b64encode(json.dumps({"roles": ["User.Read.All", "Policy.Read.All"]}).encode()).decode().rstrip("=")
+    assert granted_roles(f"h.{body}.s") == ["Policy.Read.All", "User.Read.All"]
+    assert granted_roles("not-a-jwt") == [] and granted_roles("token") == []
