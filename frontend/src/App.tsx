@@ -120,7 +120,10 @@ export default function App() {
           <aside className="nav">
             <div className="brand">
               <img src={logo} alt="D-Biz" />
-              <span>Court Connection<br />Readiness</span>
+              <span>
+                Assure
+                {offices.find((o) => o.id === office)?.workspace_kind === "courts" && <small>Court Connection Readiness</small>}
+              </span>
             </div>
             <OfficeSwitcher offices={offices} current={office} onPick={pick} />
             <NavLink to="/offices" end>Onboarding</NavLink>

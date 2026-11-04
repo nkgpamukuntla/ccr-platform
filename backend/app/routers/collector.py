@@ -28,7 +28,7 @@ router = APIRouter(prefix="/api/offices/{office_id}/collector", tags=["collector
 SCRIPT = "Collect-CCREvidence.ps1"
 CERT = "ccr-collector-signing.cer"
 
-README = """Court Connection Readiness - offline evidence collector
+README = """D-Biz Assure - offline evidence collector
 Office: {office}
 Downloaded by {who} on {when} (download {token})
 
@@ -40,7 +40,7 @@ Downloaded by {who} on {when} (download {token})
 3. Each run writes one file named <PC>_<time>.ccre next to the script (or on the Desktop).
    It is encrypted for this office only; nobody else, including D-Biz staff, can read it
    outside the portal.
-4. Upload the .ccre files in the CCR portal: Devices > Upload collector bundles.
+4. Upload the .ccre files in the D-Biz Assure portal: Devices > Upload collector bundles.
 
 The script reads security configuration only: never files, email, browser data, passwords or
 anything from Gavel. It installs nothing and leaves nothing running.
@@ -54,7 +54,7 @@ such PCs will not run the script until your IT team trusts it or we move to a co
 certificate. Check the signature first:
     Get-AuthenticodeSignature .\\Collect-CCREvidence.ps1
 It must show the signer above; HashMismatch means the file was changed, so do not run it.
-Ask your CCR contact before changing any execution policy or trusting the certificate.
+Ask your D-Biz Assure contact before changing any execution policy or trusting the certificate.
 """
 
 

@@ -141,7 +141,7 @@ def render_report(
     local = at.astimezone(tz)
     when = f"{local:%d %b %Y %H:%M} {local.tzname()}"
     gaps = sum(1 for c in head["controls"].values() if c["state"] in ("gap", "weak"))
-    subject = f"[CCR] {office['name']}: scan {local:%d %b} - {head['findings']} findings"
+    subject = f"[D-Biz Assure] {office['name']}: scan {local:%d %b} - {head['findings']} findings"
     if prev is not None:
         subject += f", {len(changes['new'])} new, {len(changes['resolved'])} resolved"
     body = [
@@ -236,7 +236,7 @@ def report_new_runs(conn: Any, within: timedelta = timedelta(days=2)) -> int:
 def report_failure(conn: Any, office_id: UUID, error: str) -> int:
     office = conn.execute("SELECT name, time_zone FROM office WHERE id = %s", (office_id,)).fetchone()
     local = datetime.now(UTC).astimezone(ZoneInfo(office["time_zone"]))
-    subject = f"[CCR] {office['name']}: today's scan failed"
+    subject = f"[D-Biz Assure] {office['name']}: today's scan failed"
     body = (
         f"The scheduled scan for {office['name']} failed after all retries on {local:%d %b %Y} ({error[:200]}).\n\n"
         "Posture and findings still show the last successful scan. The usual causes are a revoked consent or an\n"

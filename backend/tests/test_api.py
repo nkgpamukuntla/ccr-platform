@@ -802,7 +802,7 @@ def test_scan_report_lists_changes_since_previous_scan() -> None:
     }
     rem = {"open": 1, "overdue": 0, "closed_now": 1}
     subject, body = notify.render_report(office, datetime(2026, 11, 2, 12, 40, tzinfo=UTC), head, was, d, rem)
-    assert subject == "[CCR] D-Biz: scan 02 Nov - 2 findings, 1 new, 1 resolved"
+    assert subject == "[D-Biz Assure] D-Biz: scan 02 Nov - 2 findings, 1 new, 1 resolved"
     assert "02 Nov 2026 18:10 IST" in body and "MFA: Met  (was Gap)" in body
     assert "New (1):" in body and "Resolved (1):" in body and "3 devices stale  ->  1 devices stale" in body
     assert "previous scan 10 devices, 8 active" in body
