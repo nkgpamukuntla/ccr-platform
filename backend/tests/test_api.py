@@ -876,3 +876,22 @@ def test_compliance_by_country_with_intune_and_email(client: Any) -> None:
     _collect_and_score(oid, tenant)
     items = client.get(f"/api/offices/{oid}/remediation", headers=ADMIN).json()
     assert [i["status"] for i in items if i["finding_key"] == "intune:unencrypted"] == ["open"]
+
+
+def test_delete_office_archives_it(client: Any) -> None:
+    """Deleting hides the office everywhere and revokes consent; the name can be reused."""
+    body = {"name": "Old annex", "office_type": "County IT", "county": "Lab Z"}
+    oid = client.post("/api/offices", headers=ADMIN, json=body).json()["id"]
+    assert client.post(f"/api/offices/{oid}/consents/microsoft365", headers=ADMIN, json={"tenant_ref": "t"}).status_code == 201
+    assert client.request("DELETE", f"/api/offices/{oid}", headers=CLERK, json={"confirm_name": "Old annex"}).status_code == 403
+    assert client.request("DELETE", f"/api/offices/{oid}", headers=ADMIN, json={"confirm_name": "old"}).status_code == 422
+    assert client.request("DELETE", f"/api/offices/{oid}", headers=ADMIN, json={"confirm_name": "Old annex"}).json() == {
+        "status": "deleted"
+    }
+    assert oid not in {o["id"] for o in client.get("/api/offices", headers=ADMIN).json()}
+    assert client.get(f"/api/offices/{oid}", headers=ADMIN).status_code == 404
+    assert client.get(f"/api/offices/{oid}/posture", headers=ADMIN).status_code == 404
+    from app import worker
+
+    assert oid not in {str(o["office_id"]) for o in worker.consented_offices()}
+    assert client.post("/api/offices", headers=ADMIN, json=body).status_code == 201

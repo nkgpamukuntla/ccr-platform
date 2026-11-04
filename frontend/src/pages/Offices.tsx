@@ -56,6 +56,26 @@ export default function Offices() {
     }
   };
 
+  const remove = async (r: OfficeRow) => {
+    const typed = window.prompt(
+      `Delete "${r.name}"?\n\nIt disappears from every page, its daily scans stop and its Microsoft consent is revoked. ` +
+        "Its evidence and audit history are kept.\n\nType the office name to confirm:",
+    );
+    if (typed == null) return;
+    setError("");
+    try {
+      await api(`/api/offices/${r.id}`, { method: "DELETE", body: JSON.stringify({ confirm_name: typed }) });
+      try {
+        if (localStorage.getItem("ccr.office") === r.id) localStorage.setItem("ccr.office", "");
+      } catch {
+        /* storage unavailable */
+      }
+      window.location.assign("/offices");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
   const nextStep = (r: OfficeRow) => {
     for (let s = 1; s <= 6; s++) if (!r.completed_steps.includes(s)) return s;
     return 6;
@@ -146,6 +166,11 @@ export default function Offices() {
                     <Link to={`/offices/${r.id}/devices`}>Devices</Link>
                     <Link to={`/offices/${r.id}/members`}>Members</Link>
                     <Link to={`/offices/${r.id}/audit`}>Audit</Link>
+                    {me.is_admin && (
+                      <button className="secondary danger" style={{ padding: "0.15rem 0.6rem", fontSize: "0.85em" }} onClick={() => remove(r)}>
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

@@ -41,7 +41,15 @@ def _workspace_of(conn: psycopg.Connection[Any], office_id: UUID) -> UUID | None
     return row["workspace_id"] if row else None
 
 
+def _live(conn: psycopg.Connection[Any], office_id: UUID) -> None:
+    """An archived (deleted) office is gone for everyone, administrators included."""
+    row = conn.execute("SELECT archived_at FROM office WHERE id = %s", (office_id,)).fetchone()
+    if row is None or row["archived_at"] is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "office not found")
+
+
 def can_read(conn: psycopg.Connection[Any], user: User, office_id: UUID) -> None:
+    _live(conn, office_id)
     if user.is_admin or office_role(conn, user, office_id):
         return
     if _workspace_of(conn, office_id) in viewer_workspaces(conn, user):
@@ -50,6 +58,7 @@ def can_read(conn: psycopg.Connection[Any], user: User, office_id: UUID) -> None
 
 
 def can_write(conn: psycopg.Connection[Any], user: User, office_id: UUID) -> None:
+    _live(conn, office_id)
     if user.is_admin or office_role(conn, user, office_id):
         return
     if _workspace_of(conn, office_id) in viewer_workspaces(conn, user):

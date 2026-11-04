@@ -35,7 +35,7 @@ def workspaces(user: CurrentUser) -> list[dict[str, Any]]:
         viewable = list(viewer_workspaces(conn, user))
         return conn.execute(
             "SELECT w.id, w.name, w.kind, w.industry, w.created_at, w.id = ANY(%s) AS can_view_all, "
-            "(SELECT count(*) FROM office o WHERE o.workspace_id = w.id) AS offices "
+            "(SELECT count(*) FROM office o WHERE o.workspace_id = w.id AND o.archived_at IS NULL) AS offices "
             "FROM workspace w WHERE w.id = ANY(%s) OR EXISTS ("
             " SELECT 1 FROM office o JOIN membership m ON m.office_id = o.id WHERE o.workspace_id = w.id AND m.email = %s) "
             "ORDER BY w.kind, w.name",
@@ -105,15 +105,18 @@ def summary(workspace_id: UUID, user: CurrentUser) -> dict[str, Any]:
             "SELECT count(*) AS offices, count(ob.live_at) AS live, "
             "(SELECT count(*) FROM site) AS sites_in_register, "
             "(SELECT count(DISTINCT os.site_id) FROM office_site os JOIN office o2 ON o2.id = os.office_id WHERE o2.workspace_id = %s) "
-            "AS sites_covered FROM office o LEFT JOIN onboarding ob ON ob.office_id = o.id WHERE o.workspace_id = %s",
+            "AS sites_covered FROM office o LEFT JOIN onboarding ob ON ob.office_id = o.id "
+            "WHERE o.workspace_id = %s AND o.archived_at IS NULL",
             (workspace_id, workspace_id),
         ).fetchone()
         by_profile = conn.execute(
             "SELECT COALESCE(ep.profile, '-') AS profile, count(*) AS offices FROM office o "
-            "LEFT JOIN environment_profile ep ON ep.office_id = o.id WHERE o.workspace_id = %s GROUP BY 1 ORDER BY 1",
+            "LEFT JOIN environment_profile ep ON ep.office_id = o.id WHERE o.workspace_id = %s AND o.archived_at IS NULL "
+            "GROUP BY 1 ORDER BY 1",
             (workspace_id,),
         ).fetchall()
         by_type = conn.execute(
-            "SELECT office_type, count(*) AS offices FROM office WHERE workspace_id = %s GROUP BY 1 ORDER BY 1", (workspace_id,)
+            "SELECT office_type, count(*) AS offices FROM office WHERE workspace_id = %s AND archived_at IS NULL GROUP BY 1 ORDER BY 1",
+            (workspace_id,),
         ).fetchall()
     return {"workspace": ws, "totals": totals, "by_profile": by_profile, "by_type": by_type}

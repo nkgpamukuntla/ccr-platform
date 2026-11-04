@@ -53,7 +53,7 @@ def consented_offices() -> list[dict[str, Any]]:
             "ARRAY(SELECT r.started_at FROM collection_run r WHERE r.office_id = k.office_id AND r.status = 'failed' "
             "      AND r.started_at > now() - interval '2 days') AS recent_failures "
             "FROM consent k JOIN office o ON o.id = k.office_id "
-            "WHERE k.source = 'microsoft365' AND k.status = 'granted' AND k.tenant_ref ~ %s "
+            "WHERE k.source = 'microsoft365' AND k.status = 'granted' AND k.tenant_ref ~ %s AND o.archived_at IS NULL "
             "ORDER BY k.office_id, k.granted_at DESC",
             (UUID_RE,),
         ).fetchall()

@@ -107,8 +107,8 @@ def list_offices(user: CurrentUser) -> list[dict[str, Any]]:
         JOIN workspace w ON w.id = o.workspace_id
         LEFT JOIN environment_profile ep ON ep.office_id = o.id
         LEFT JOIN onboarding ob ON ob.office_id = o.id
-        WHERE o.workspace_id = ANY(%s)
-           OR EXISTS (SELECT 1 FROM membership m WHERE m.office_id = o.id AND m.email = %s)
+        WHERE o.archived_at IS NULL
+          AND (o.workspace_id = ANY(%s) OR EXISTS (SELECT 1 FROM membership m WHERE m.office_id = o.id AND m.email = %s))
         ORDER BY w.kind, w.name, o.county, o.name
     """
     with tx() as conn:
@@ -135,6 +135,28 @@ def create_office(body: OfficeIn, user: Annotated[User, Depends(require_admin)])
         conn.execute("INSERT INTO onboarding (office_id) VALUES (%s)", (row["id"],))
         audit.record(conn, user, "office.create", row["id"], name=body.name, county=body.county, workspace=str(ws))
         return row
+
+
+class ArchiveIn(BaseModel):
+    confirm_name: str
+
+
+@router.delete("/offices/{office_id}")
+def archive_office(office_id: UUID, body: ArchiveIn, user: Annotated[User, Depends(require_admin)]) -> dict[str, str]:
+    """Delete an office: archived, consent revoked, scans stop. Evidence and audit history are kept."""
+    with tx() as conn:
+        can_write(conn, user, office_id)
+        row = conn.execute("SELECT name FROM office WHERE id = %s", (office_id,)).fetchone()
+        assert row is not None  # can_write has checked it exists
+        if body.confirm_name.strip() != row["name"]:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "type the office name exactly to confirm")
+        conn.execute("UPDATE office SET archived_at = now(), archived_by = %s WHERE id = %s", (user.email, office_id))
+        conn.execute(
+            "UPDATE consent SET status = 'revoked', revoked_by = %s, revoked_at = now() WHERE office_id = %s AND status = 'granted'",
+            (user.email, office_id),
+        )
+        audit.record(conn, user, "office.deleted", office_id, name=row["name"])
+    return {"status": "deleted"}
 
 
 @router.get("/offices/{office_id}")
