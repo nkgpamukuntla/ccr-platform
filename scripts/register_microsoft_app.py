@@ -33,7 +33,7 @@ PERMISSIONS = [
     "AuditLog.Read.All", "Device.Read.All", "DeviceManagementConfiguration.Read.All", "DeviceManagementManagedDevices.Read.All",
     "Directory.Read.All", "LicenseAssignment.Read.All", "Policy.Read.All", "PrivilegedAccess.Read.AzureADGroup",
     "PrivilegedEligibilitySchedule.Read.AzureADGroup", "RoleManagement.Read.Directory", "RoleManagementPolicy.Read.AzureADGroup",
-    "SecurityEvents.Read.All", "User.Read.All",
+    "Reports.Read.All", "SecurityEvents.Read.All", "User.Read.All",
 ]
 
 

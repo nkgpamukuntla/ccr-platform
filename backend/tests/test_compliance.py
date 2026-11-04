@@ -176,3 +176,105 @@ def test_frameworks_never_claim_more_than_the_evidence() -> None:
     assert e8["Multi-factor authentication"]["state"] == "weak"
     assert e8["Restrict administrative privileges"]["state"] == "gap"
     assert frameworks.assess([], found) == []
+
+
+E3 = "e3-id"
+P1 = "p1-id"
+SKUS = [
+    {
+        "skuId": E3,
+        "skuPartNumber": "SPE_E3",
+        "capabilityStatus": "Enabled",
+        "prepaidUnits": {"enabled": 10},
+        "consumedUnits": 4,
+        "servicePlans": [{"servicePlanName": n} for n in ("EXCHANGE_S_ENTERPRISE", "AAD_PREMIUM", "INTUNE_A", "MDE_LITE")],
+    },
+    {
+        "skuId": P1,
+        "skuPartNumber": "AAD_PREMIUM",
+        "capabilityStatus": "Enabled",
+        "prepaidUnits": {"enabled": 2},
+        "consumedUnits": 1,
+        "servicePlans": [{"servicePlanName": "AAD_PREMIUM"}],
+    },
+    {
+        "skuId": "free",
+        "skuPartNumber": "FLOW_FREE",
+        "capabilityStatus": "Enabled",
+        "prepaidUnits": {"enabled": 10000},
+        "consumedUnits": 3,
+    },
+]
+USERS = [
+    {
+        "id": "1",
+        "userPrincipalName": "active@lab.org",
+        "accountEnabled": True,
+        "assignedLicenses": [{"skuId": E3}],
+        "createdDateTime": "2025-01-01T00:00:00Z",
+    },
+    {"id": "2", "userPrincipalName": "left@lab.org", "accountEnabled": False, "assignedLicenses": [{"skuId": E3}]},
+    {
+        "id": "3",
+        "userPrincipalName": "idle@lab.org",
+        "accountEnabled": True,
+        "assignedLicenses": [{"skuId": E3}, {"skuId": P1}],
+        "createdDateTime": "2025-01-01T00:00:00Z",
+    },
+    {
+        "id": "4",
+        "userPrincipalName": "never@lab.org",
+        "accountEnabled": True,
+        "assignedLicenses": [{"skuId": E3}],
+        "createdDateTime": "2025-01-01T00:00:00Z",
+    },
+    {"id": "5", "userPrincipalName": "nolicence@lab.org", "accountEnabled": True, "assignedLicenses": []},
+]
+SIGNINS = [
+    {"id": "1", "signInActivity": {"lastSuccessfulSignInDateTime": "2026-11-01T00:00:00Z"}},
+    {"id": "3", "signInActivity": {"lastSignInDateTime": "2026-05-01T00:00:00Z"}},
+    {"id": "4", "signInActivity": None},
+]
+
+
+def licence_reads(signins: int = 200) -> list[dict[str, Any]]:
+    return [
+        read("subscribed_skus", 200, {"value": SKUS}),
+        read("users", 200, {"value": USERS}),
+        read("user_signins", signins, {"value": SIGNINS} if signins == 200 else {"error": {}}),
+        read("ca_policies", 200, {"value": []}),
+    ]
+
+
+def test_licence_model_seats_people_and_security() -> None:
+    from app import licences
+
+    data = licences.compact({r["name"]: r for r in licence_reads()})
+    assert data is not None and [u["upn"] for u in data["users"]] == [
+        "active@lab.org",
+        "left@lab.org",
+        "idle@lab.org",
+        "never@lab.org",
+    ]
+    m = licences.model(data, AT, {"SPE_E3": 30.0}, intune_total=0, edr_other=5)
+    prod = {p["part"]: p for p in m["products"]}
+    assert prod["SPE_E3"]["unassigned"] == 6 and prod["SPE_E3"]["price_source"] == "yours" and prod["SPE_E3"]["monthly"] == 300.0
+    assert prod["AAD_PREMIUM"]["price_source"] == "list" and prod["FLOW_FREE"]["free"] and prod["FLOW_FREE"]["unassigned"] == 0
+    why = {p["upn"]: p["reasons"] for p in m["people"]}
+    assert set(why) == {"left@lab.org", "idle@lab.org", "never@lab.org"}
+    assert why["left@lab.org"] == ["Account is disabled but still holds a licence"]
+    assert (
+        why["idle@lab.org"][0].startswith("No sign-in for 18")
+        and "Microsoft Entra ID P1 is already included in Microsoft 365 E3" in why["idle@lab.org"]
+    )
+    assert why["never@lab.org"] == ["Has never signed in"]
+    assert m["totals"]["monthly_unassigned"] == 6 * 30.0 + 1 * 6.0 and m["totals"]["people_to_review"] == 3
+    sec = {s["key"]: s for s in m["security"]}
+    assert sec["conditional_access"]["in_use"] is False and sec["intune"]["in_use"] is False
+    assert sec["defender_endpoint"]["in_use"] is None and "5 computers run another EDR" in sec["defender_endpoint"]["note"]
+
+    # Without sign-in dates, nobody is called inactive.
+    quiet = licences.model(licences.compact({r["name"]: r for r in licence_reads(403)}), AT, {}, None, 0)  # type: ignore[arg-type]
+    assert {p["upn"] for p in quiet["people"]} == {"left@lab.org", "idle@lab.org"} and not quiet["read"]["sign_ins"]
+    assert {s["key"]: s["in_use"] for s in quiet["security"]}["intune"] is None
+    assert licences.compact({}) is None

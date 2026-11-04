@@ -16,7 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app import plain
+from app import licences, plain
 from app.routers.imports import office_devices
 from app.routers.microsoft import _edr_from_devices
 
@@ -253,6 +253,21 @@ def _tenant_findings(fx: dict[str, Any], devs: list[dict[str, Any]], as_of: date
                 "Upgrade to a supported Windows version or replace the device.",
                 "Intune managedDevices osVersion 10.0 build below 22000",
                 {"devices": it["windows10"], "of": it["total"], "sample": it["sample"]["windows10"]},
+            )
+
+    ld = fx.get("licence_data")
+    if ld:
+        it_total = it["total"] if it else None
+        idle = [x for x in licences.model(ld, as_of, {}, it_total, 0)["security"] if x["in_use"] is False]
+        if idle:
+            add(
+                "licence:security_unused",
+                f"{len(idle)} security feature(s) paid for but not switched on",
+                "Medium",
+                "Connected · Graph",
+                "Switch on: " + "; ".join(x["feature"] for x in idle) + ".",
+                "Licence service plans vs configuration: " + "; ".join(f"{x['feature']} ({x['note']})" for x in idle),
+                {"features": [{"feature": x["feature"], "included_in": x["included_in"], "note": x["note"]} for x in idle]},
             )
 
     em = fx.get("email")

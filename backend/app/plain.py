@@ -201,6 +201,7 @@ DEVICE: dict[str, str] = {
     "intune:stale": "A device that has not checked in for a month gets no new policies and may be lost or retired.",
     "email:spoofable": "Without SPF and DMARC anyone can send email that appears to come from you, the most common start of fraud.",
     "email:dmarc_monitor": "DMARC is only watching: fake email using your name is still delivered to inboxes.",
+    "licence:security_unused": "You already pay for this protection in your Microsoft licences, but it is not switched on.",
 }
 
 SEVERITY = {"Mandatory": "Must fix", "High": "Important", "Medium": "Good practice"}
@@ -288,6 +289,7 @@ THEMES: dict[str, tuple[str, str]] = {
         "Stop others sending email as you",
         "Email that pretends to come from your domains is rejected before it reaches anyone.",
     ),
+    "licences": ("Use the security you already pay for", "Protection included in your Microsoft licences is switched on."),
 }
 _THEME_OF = {
     "control:1": "mfa",
@@ -318,6 +320,8 @@ def theme(key: str) -> str:
         return "devices"
     if key.startswith("email:"):
         return "email"
+    if key.startswith("licence:"):
+        return "licences"
     k = key.removeprefix("scuba:")
     if k in _THEME_OF:
         return _THEME_OF[k]

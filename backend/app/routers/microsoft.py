@@ -135,7 +135,7 @@ def posture(office_id: UUID, user: CurrentUser) -> dict[str, Any]:
         }
         for c in controls
     ]
-    fx = {k: v for k, v in f["facts"].items() if k not in ("entra_devices", "intune_devices")} if f else None
+    fx = {k: v for k, v in f["facts"].items() if k not in ("entra_devices", "intune_devices", "licence_data")} if f else None
     return {"run": latest, "last_attempt": last_attempt, "controls": controls, "facts": fx}
 
 

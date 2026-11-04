@@ -286,7 +286,7 @@ def evidence_pack(office_id: UUID, user: CurrentUser, destination: str = "manage
 
 # ---------- exports ----------
 
-EXPORTS = ("findings", "remediation", "devices", "entra-devices", "posture", "audit", "evidence-pack")
+EXPORTS = ("findings", "remediation", "devices", "entra-devices", "licences", "posture", "audit", "evidence-pack")
 
 
 def _sheets(
@@ -393,6 +393,41 @@ def _sheets(
                     for d in devs
                 ],
             )
+        }
+    if what == "licences":
+        from app.routers.licences import licence_view
+
+        lv = licence_view(conn, office_id)
+        if lv is None:
+            raise HTTPException(404, "No licence data yet: it arrives with the next scan")
+        return {
+            "Products": (
+                ["Product", "SKU", "Bought", "Assigned", "Unassigned", "Price per user per month", "Price from", "Monthly cost"],
+                [
+                    [
+                        p["name"],
+                        p["part"],
+                        p["bought"],
+                        p["assigned"],
+                        p["unassigned"],
+                        p["price"],
+                        p["price_source"],
+                        p["monthly"],
+                    ]
+                    for p in lv["products"]
+                ],
+            ),
+            "People to review": (
+                ["User", "Licences", "Why", "Last sign-in", "Monthly cost"],
+                [[x["upn"], x["licences"], "; ".join(x["reasons"]), x["last_sign_in"], x["monthly"]] for x in lv["people"]],
+            ),
+            "Security you pay for": (
+                ["Feature", "Included in", "In use", "Note"],
+                [
+                    [x["feature"], x["included_in"], {True: "Yes", False: "No", None: "Not checked"}[x["in_use"]], x["note"]]
+                    for x in lv["security"]
+                ],
+            ),
         }
     if what == "entra-devices":
         x = entra_device_records(conn, office_id)

@@ -58,6 +58,21 @@ READS = [
     # Microsoft Secure Score: the newest daily score only, and the actions it is made of.
     Read("secure_scores", "/v1.0/security/secureScores?$top=1", "SecurityEvents.Read.All", max_pages=1),
     Read("secure_score_profiles", "/v1.0/security/secureScoreControlProfiles", "SecurityEvents.Read.All"),
+    # Licences: who holds what, whether they still sign in, and which Microsoft 365 apps they use.
+    Read(
+        "users",
+        "/v1.0/users?$top=999&$select=id,userPrincipalName,accountEnabled,userType,assignedLicenses,createdDateTime",
+        "User.Read.All",
+    ),
+    # Sign-in dates need Entra ID P1/P2; a tenant without them answers 403 and activity reads "not checked".
+    Read(
+        "user_signins", "/v1.0/users?$top=120&$select=id,signInActivity", "AuditLog.Read.All", max_pages=200
+    ),  # 120 is the most per page
+    Read(
+        "usage_30d",
+        "/beta/reports/getOffice365ActiveUserDetail(period='D30')?$format=application/json",
+        "Reports.Read.All",
+    ),
 ]
 
 # Our reads plus what ScubaGear's Entra collection needs (app/scuba/aad.py); all read-only.

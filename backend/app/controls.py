@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from app import email_dns, entra_devices, tenant_checks
+from app import email_dns, entra_devices, licences, tenant_checks
 from app.microsoft.graph import items
 
 State = Literal["met", "gap", "weak", "not_observed", "pending"]
@@ -267,6 +267,7 @@ def facts(bundle: dict[str, Any], at: datetime | None = None) -> dict[str, Any]:
         "intune": tenant_checks.intune(reads, when),
         "intune_devices": tenant_checks.intune_rows(items(managed)) if managed.get("status") == 200 else None,
         "secure_score": tenant_checks.secure_score(reads),
+        "licence_data": licences.compact(reads),
         "email": email_dns.evaluate({k: v for k, v in (bundle.get("email_dns") or {}).items() if not k.startswith("_")}),
         "reads": {name: r.get("status") for name, r in reads.items()},
     }

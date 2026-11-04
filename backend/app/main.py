@@ -25,6 +25,7 @@ from app.routers import (
     compliance,
     findings,
     imports,
+    licences,
     microsoft,
     offices,
     onboarding,
@@ -55,6 +56,7 @@ app.include_router(aoc.router)
 app.include_router(workspaces.router)
 app.include_router(remediation.router)
 app.include_router(compliance.router)
+app.include_router(licences.router)
 
 
 @app.middleware("http")

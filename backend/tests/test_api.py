@@ -834,7 +834,21 @@ def test_compliance_by_country_with_intune_and_email(client: Any) -> None:
         read("managed_devices", 200, {"value": MANAGED}),
         read("compliance_policies", 200, {"value": [{"id": "p1"}]}),
     ]
+    from tests.test_compliance import licence_reads
+
+    extra += [r for r in licence_reads() if r["name"] in ("users", "user_signins")]
     _collect_and_score(oid, tenant, extra, {"lab.org": {"spf": txt(), "dmarc": txt(), "dkim": dkim(False)}})
+
+    lic = client.get(f"/api/offices/{oid}/licences", headers=ADMIN).json()
+    assert lic["products"][0]["part"] == "SPE_E5" and lic["read"]["sign_ins"]
+    assert client.get(f"/api/offices/{oid}/licences", headers=OTHER).status_code == 404
+    assert client.put(f"/api/offices/{oid}/licence-prices", headers=ADMIN, json={"prices": {"SPE_E5": 50}}).json() == {
+        "SPE_E5": 50
+    }
+    assert client.get(f"/api/offices/{oid}/licences", headers=ADMIN).json()["products"][0]["monthly"] == 25 * 50
+    assert client.put(f"/api/offices/{oid}/licence-prices", headers=ADMIN, json={"prices": {"SPE_E5": -1}}).status_code == 422
+    assert client.get(f"/api/offices/{oid}/export/licences.xlsx", headers=ADMIN).status_code == 200
+    assert "licence_data" not in client.get(f"/api/offices/{oid}/posture", headers=ADMIN).json()["facts"]
 
     c = client.get(f"/api/offices/{oid}/compliance", headers=ADMIN).json()
     assert [f["key"] for f in c["frameworks"]] == ["essential_eight", "privacy_au", "cyber_essentials_sg", "pdpa"]

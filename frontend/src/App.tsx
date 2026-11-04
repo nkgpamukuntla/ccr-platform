@@ -13,6 +13,8 @@ import Workspaces from "./pages/Workspaces";
 import Remediation, { RemediationPicker } from "./pages/Remediation";
 import Evidence, { EvidencePicker } from "./pages/Evidence";
 import Compliance, { CompliancePicker } from "./pages/Compliance";
+import Licences from "./pages/Licences";
+import logo from "./dbiz-logo.svg";
 
 const MeContext = createContext<Me | null>(null);
 export const useMe = () => useContext(MeContext)!;
@@ -43,6 +45,7 @@ const SECTIONS = [
   ["remediation", "Action plan", "What to do, who owns it, by when"],
   ["evidence", "Evidence", "The answers to hand to a court or insurer"],
   ["compliance", "Compliance", "Each country's rules, matched to what we checked"],
+  ["licences", "Licences", "Microsoft 365 licences: seats, waste and the security you already pay for"],
 ] as const;
 
 function OfficeSwitcher({ offices, current, onPick }: { offices: OfficeRow[]; current: string; onPick: (id: string) => void }) {
@@ -115,7 +118,10 @@ export default function App() {
       <OfficeContext.Provider value={office}>
         <div className="shell">
           <aside className="nav">
-            <div className="brand">CCR</div>
+            <div className="brand">
+              <img src={logo} alt="D-Biz" />
+              <span>Court Connection<br />Readiness</span>
+            </div>
             <OfficeSwitcher offices={offices} current={office} onPick={pick} />
             <NavLink to="/offices" end>Onboarding</NavLink>
             {SECTIONS.map(([s, label, hint]) => (
@@ -155,6 +161,8 @@ export default function App() {
               <Route path="/offices/:officeId/evidence" element={<Evidence />} />
               <Route path="/compliance" element={<Section name="compliance" picker={<CompliancePicker />} />} />
               <Route path="/offices/:officeId/compliance" element={<Compliance />} />
+              <Route path="/licences" element={<Section name="licences" picker={<PosturePicker />} />} />
+              <Route path="/offices/:officeId/licences" element={<Licences />} />
               <Route path="*" element={<Navigate to="/offices" replace />} />
             </Routes>
           </main>

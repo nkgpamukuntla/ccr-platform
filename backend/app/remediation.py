@@ -32,7 +32,11 @@ def sync(conn: Any, office_id: UUID, findings: list[Finding]) -> int:
         "WHERE r.office_id = %s AND r.status = 'evaluated' ORDER BY r.started_at DESC LIMIT 1",
         (office_id,),
     ).fetchone()
-    unread = tuple(f"{k}:" for k in ("intune", "email") if not (fx and fx["facts"].get(k)))
+    unread = tuple(
+        f"{k}:"
+        for k, f in (("intune", "intune"), ("email", "email"), ("licence", "licence_data"))
+        if not (fx and fx["facts"].get(f))
+    )
     closed = 0
     for item in conn.execute(
         "SELECT id, finding_key, status, updated_at FROM remediation_item WHERE office_id = %s AND status <> 'closed'",
